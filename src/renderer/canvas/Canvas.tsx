@@ -419,7 +419,8 @@ import { canClearDirty, canCommitCanvas, canCreateOnCanvas } from '../state/pers
 import { isHidden } from '../lib/ui-visibility'
 import { boardLogEvents } from '../lib/boardLogDiff'
 import { useBoardLog } from '../state/boardLog'
-import { isKanbanOpen, useViewMode, viewFor } from '../state/viewMode'
+import { isGlobalKanbanOpen, isKanbanOpen, useViewMode, viewFor } from '../state/viewMode'
+import { GlobalKanbanView } from '../components/kanban/GlobalKanbanView'
 import { useFocusNode, FOCUS_SURFACE_ID } from '../state/focusNode'
 import { focusTargetId } from '../lib/focusTarget'
 import {
@@ -2197,7 +2198,7 @@ export function Canvas() {
         if (node) {
           // Same rule as focusNodeById: if the project we just landed on shows the BOARD, the
           // node lives on a card, not on the canvas hidden under it.
-          if (isKanbanOpen(useProjects.getState().activeProjectId)) {
+          if (isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId)) {
             useViewMode.getState().requestCard(pending)
           } else {
             setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === pending })))
@@ -2247,7 +2248,9 @@ export function Canvas() {
   // ride the same debounced whole-file save.
   useEffect(() => registerWorkspaceDirty(markDirty), [markDirty])
 
-  const kanbanOpen = useViewMode((s) => !!activeProjectId && viewFor(s, activeProjectId) === 'kanban')
+  const perProjectKanbanOpen = useViewMode((s) => !!activeProjectId && viewFor(s, activeProjectId) === 'kanban')
+  const globalKanbanOpen = useViewMode((s) => s.globalKanban)
+  const kanbanOpen = globalKanbanOpen || perProjectKanbanOpen
   const projectKanban = useProjects((s) => s.projects.find((p) => p.id === s.activeProjectId)?.kanban)
   // Fresh default per project — ids must not be shared across projects; NOT persisted
   // until the first edit writes it (spec lazy-default rule).
@@ -4056,7 +4059,7 @@ export function Canvas() {
       // so the user actually sees the login node they must interact with. Same rationale as the
       // Settings-overlay close in the add-account listeners above.
       const pid = useProjects.getState().activeProjectId
-      if (pid && isKanbanOpen(pid)) useViewMode.getState().toggle(pid)
+      if (pid && (isGlobalKanbanOpen() || isKanbanOpen(pid))) useViewMode.getState().toggle(pid)
     }
     window.addEventListener('nodeterm:switch-system-account', onSwitchSystemAccount)
     return () => window.removeEventListener('nodeterm:switch-system-account', onSwitchSystemAccount)
@@ -4264,7 +4267,7 @@ export function Canvas() {
     }
 
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (isKanbanOpen(useProjects.getState().activeProjectId)) return
+      if (isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId)) return
       const combo = dictationBinding()
       if (combo === '' || !isHoldChord(combo)) return
 
@@ -5968,7 +5971,7 @@ export function Canvas() {
     return nodesRef.current.filter((n) => !n.parentId).length >= 2
   }, [])
   const arrangeAllNodes = useCallback(() => {
-    if (isKanbanOpen(useProjects.getState().activeProjectId)) return
+    if (isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId)) return
     const targets = nodesRef.current
       .filter((n) => !n.parentId)
       .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x)
@@ -6103,7 +6106,7 @@ export function Canvas() {
   const stepAndFrame = useCallback(
     (direction: 'back' | 'forward') => {
       const activeId = useProjects.getState().activeProjectId
-      if (!activeId || isKanbanOpen(activeId)) return
+      if (!activeId || isGlobalKanbanOpen() || isKanbanOpen(activeId)) return
       const next = stepBreadcrumb(navRef.current, direction, (nodeId) =>
         nodesRef.current.some((n) => n.id === nodeId)
       )
@@ -6171,7 +6174,7 @@ export function Canvas() {
     }
     // The kanban board is an opaque overlay and its card modal already IS a focused view of a
     // session — engaging under it would just hide the canvas twice.
-    if (isKanbanOpen(useProjects.getState().activeProjectId)) return
+    if (isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId)) return
     const target = focusTargetId(nodesRef.current)
     if (!target) {
       setNotice({ kind: 'error', text: FOCUS_NO_TARGET_NOTICE })
@@ -6306,12 +6309,18 @@ export function Canvas() {
   // shell, and the digit addresses an open project). `liveProjectJumpTarget` is the same decision
   // the terminals' swallow asks, so the two can't disagree; a null target leaves the key to
   // whatever has focus. `switchProject` no-ops on the active id.
+  // When the global swimlane kanban is open, the same chord scrolls to the Nth swimlane instead
+  // of switching tabs (see GlobalKanbanView's `nodeterm:swimlane-jump` listener).
   const projectJumpGesture = useCallback((raw: GlobalKeyEvent): boolean => {
     const e = raw as KeyboardEvent
     if (projectJumpDigit(e) === null) return false
     const targetId = liveProjectJumpTarget(e)
     if (!targetId) return false
     e.preventDefault()
+    if (isGlobalKanbanOpen()) {
+      window.dispatchEvent(new CustomEvent('nodeterm:swimlane-jump', { detail: { projectId: targetId } }))
+      return true
+    }
     switchProject(targetId)
     return true
   }, [switchProject])
@@ -6345,7 +6354,7 @@ export function Canvas() {
     // copy on a Linux box. The board is an opaque overlay over the canvas, so a copy there
     // would act on a selection the user cannot see (the canvas-only-shortcut discipline).
     const projects = useProjects.getState()
-    if (!isMac || isKanbanOpen(projects.activeProjectId)) return false
+    if (!isMac || isGlobalKanbanOpen() || isKanbanOpen(projects.activeProjectId)) return false
     const paths = selectedLocalFilePaths(nodesRef.current, {
       projectIsRelay: !!projects.getProject(projects.activeProjectId ?? '')?.remote
     })
@@ -6469,7 +6478,7 @@ export function Canvas() {
   const globalKeyDeps = useRef<GlobalKeydownDeps | null>(null)
   globalKeyDeps.current = {
     activeElement: () => document.activeElement as unknown as ContextElement | null,
-    kanbanOpen: () => isKanbanOpen(useProjects.getState().activeProjectId),
+    kanbanOpen: () => isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId),
     overrides: activeKeybindingOverrides,
     isMac,
     // Read per keystroke (the deps object is rebuilt each render anyway, but the thunk is what
@@ -6484,9 +6493,10 @@ export function Canvas() {
       'app.settings': () => { setSettingsSection(undefined); setSettingsOpen(true); return true },
       'app.shortcutsPanel': () => { setShortcutsOpen((v) => !v); return true },
       'view.kanbanToggle': () => {
-        const id = useProjects.getState().activeProjectId
-        if (!id) return false
-        useViewMode.getState().toggle(id)
+        // New global swimlane kanban: toggle the overview that shows all projects as swimlanes.
+        // Per-project kanban remains via the tab's kanban button (TabBar toggle) and direct toggle().
+        // Keyboard shortcut now controls the global overview — Cmd+1..9 then jumps within it.
+        useViewMode.getState().toggleGlobalKanban()
         return true
       },
       'view.focusMode': () => { toggleFocusMode(); return true },
@@ -7587,7 +7597,7 @@ export function Canvas() {
         // The board is a full-page overlay: framing the node on the canvas underneath it is
         // invisible, which is why the notch's Go (and every other "go to node" path) read as
         // broken there. On the board, "go to" means OPEN THE CARD.
-        if (isKanbanOpen(useProjects.getState().activeProjectId)) {
+        if (isGlobalKanbanOpen() || isKanbanOpen(useProjects.getState().activeProjectId)) {
           useViewMode.getState().requestCard(nodeId)
           useAgentStatus.getState().setActive(nodeId, true)
           useAgentStatus.getState().clearUnread(nodeId)
@@ -7617,6 +7627,14 @@ export function Canvas() {
   )
   focusNodeRef.current = focusNodeById
 
+  // Global kanban swimlane "Open on canvas" path — GlobalKanbanView dispatches this after closing
+  // the overview, so focusNodeById can frame the node on the canvas (project switch included).
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ nodeId: string }>) => focusNodeById(e.detail.nodeId)
+    window.addEventListener('nodeterm:focus-node' as never, handler as never)
+    return () => window.removeEventListener('nodeterm:focus-node' as never, handler as never)
+  }, [focusNodeById])
+
   // Session board cards are derived LIVE from the canvas nodes; the board stores only assignments.
   // Only while the board is OPEN: `nodes` gets a fresh identity on every drag frame, so a closed
   // board was rebuilding a card object per node ~60×/s for a surface that is not mounted. The
@@ -7625,10 +7643,10 @@ export function Canvas() {
   // list existing while the canvas is what you are looking at.
   const kanbanSessions = useMemo(
     () =>
-      kanbanOpen
+      perProjectKanbanOpen
         ? nodes.map(toKanbanSession).filter((s): s is KanbanSession => s !== null)
         : NO_KANBAN_SESSIONS,
-    [nodes, kanbanOpen]
+    [nodes, perProjectKanbanOpen]
   )
 
   // Create a node from the board's per-column "+ New" menu: it lands on the canvas (view
@@ -11339,7 +11357,9 @@ export function Canvas() {
             )
           })()}
       </div>
-      {kanbanOpen && (
+      {globalKanbanOpen ? (
+        <GlobalKanbanView />
+      ) : perProjectKanbanOpen && (
         <KanbanView
           board={projectKanban ?? seedBoard}
           sessions={kanbanSessions}

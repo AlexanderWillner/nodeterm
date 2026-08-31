@@ -87,7 +87,7 @@ export function TabBar({
   // Closed projects are hidden here (reopen them from the start screen's "Recently closed").
   const projects = useMemo(() => allProjects.filter((p) => !p.closed), [allProjects])
   const activeId = useProjects((s) => s.activeProjectId)
-  const kanbanActive = useViewMode((s) => !!activeId && viewFor(s, activeId) === 'kanban')
+  const kanbanActive = useViewMode((s) => s.globalKanban || (!!activeId && viewFor(s, activeId) === 'kanban'))
   // Unread dots need only the unread id set — subscribing to the whole status map re-rendered
   // the TabBar on every working/waiting flip of any agent. Primitive signature → rare updates.
   const unreadIds = useAgentStatus((s) => {
@@ -358,7 +358,15 @@ export function TabBar({
                     )}
                     onClick={(e) => {
                       e.stopPropagation() // a tab click switches projects, this only flips the view
-                      useViewMode.getState().toggle(p.id)
+                      // Global swimlane overview replaces per-project tabs — toggle the global board
+                      const vm = useViewMode.getState()
+                      if (vm.globalKanban || viewFor(vm, p.id) === 'kanban') {
+                        // If either global or per-project kanban is open, close both to return to canvas
+                        if (vm.globalKanban) vm.toggleGlobalKanban()
+                        if (viewFor(vm, p.id) === 'kanban') vm.toggle(p.id)
+                      } else {
+                        vm.toggleGlobalKanban()
+                      }
                     }}
                   >
                     {kanbanActive ? <IconCanvasView /> : <IconKanban />}

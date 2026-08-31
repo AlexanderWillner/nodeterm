@@ -9,6 +9,7 @@ import { readLocal, writeLocal } from '../lib/localStore'
 // project the user hasn't explicitly toggled, while their explicit choices stick.
 
 export const PROJECT_VIEW_KEY = 'nodeterm.projectView'
+export const GLOBAL_KANBAN_KEY = 'nodeterm.globalKanban'
 
 export type ProjectView = 'canvas' | 'kanban'
 
@@ -39,6 +40,9 @@ interface ViewModeState {
   defaultView: ProjectView
   setDefaultView(v: ProjectView): void
   toggle(projectId: string): void
+  /** Global swimlane overview — when true, kanban shows all projects as swimlanes instead of per-project tabs. */
+  globalKanban: boolean
+  toggleGlobalKanban(): void
   /**
    * A node whose CARD should be opened on the board, set by anything that "goes to" a node while
    * the board is up — the notch HUD's Go, a notification click, ⌘K, the sessions sidebar. Those
@@ -58,9 +62,20 @@ export function viewFor(s: Pick<ViewModeState, 'viewByProject' | 'defaultView'>,
   return s.viewByProject[projectId] ?? s.defaultView
 }
 
+function readGlobalKanban(): boolean {
+  try {
+    const raw = readLocal(GLOBAL_KANBAN_KEY)
+    return raw === '1' || raw === 'true'
+  } catch { return false }
+}
+function saveGlobalKanban(v: boolean): void {
+  try { writeLocal(GLOBAL_KANBAN_KEY, v ? '1' : '0') } catch { /* ignore */ }
+}
+
 export const useViewMode = create<ViewModeState>((set) => ({
   viewByProject: parseViewMap(readLocal(PROJECT_VIEW_KEY)),
   defaultView: 'canvas',
+  globalKanban: readGlobalKanban(),
   setDefaultView: (v) => set((s) => (s.defaultView === v ? s : { defaultView: v })),
   requestedCardNodeId: null,
   requestCard: (nodeId) => set({ requestedCardNodeId: nodeId }),
@@ -77,6 +92,12 @@ export const useViewMode = create<ViewModeState>((set) => ({
       // Leaving the board (or entering it) drops any unconsumed request — it belonged to the view
       // the user just left, and firing it later would pop a card out of nowhere.
       return { viewByProject: next, requestedCardNodeId: null }
+    }),
+  toggleGlobalKanban: () =>
+    set((s) => {
+      const next = !s.globalKanban
+      saveGlobalKanban(next)
+      return { globalKanban: next, requestedCardNodeId: null }
     })
 }))
 
@@ -84,4 +105,9 @@ export const useViewMode = create<ViewModeState>((set) => ({
  *  keydown handlers use this so they need no store subscription/deps). */
 export function isKanbanOpen(projectId: string): boolean {
   return !!projectId && viewFor(useViewMode.getState(), projectId) === 'kanban'
+}
+
+/** True when the global swimlane overview is active (all projects as swimlanes). */
+export function isGlobalKanbanOpen(): boolean {
+  return useViewMode.getState().globalKanban
 }

@@ -1,0 +1,389 @@
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ProjectKanban } from '@shared/types'
+import { AGENT_CONFIG, BUILTIN_AGENT_IDS, type AgentId } from '@shared/agents/config'
+import { useProjects } from '../../state/projects'
+import { useSettings } from '../../state/settings'
+import {
+  addColumn, assignNode, assignedTo, boardLabels, cardMatchesLabelFilter, cardMeta, columnForNode,
+  deleteColumn, labelsForCard, moveColumn,
+  nextColumnColor, pruneAssignments, recolorColumn, renameColumn, unassigned, defaultKanban
+} from '../../lib/kanban'
+import { KanbanColumn, type KanbanLane } from './KanbanColumn'
+import { SessionCard } from './SessionCard'
+import { toKanbanSessionState } from '../../canvas/toKanbanSessionState'
+import { createAgentNode, createBrowserNode, createStickyNode, createTerminalNode, flowToNodeStates, resolveNewNodeAccount } from '../../state/workspace'
+import { useViewMode } from '../../state/viewMode'
+import { useSession } from '../../session/session'
+import { activePermissionMode } from '../../state/permissionMode'
+import { CardModal } from './CardModal'
+import { ContextMenu, type MenuItem } from '../ContextMenu'
+import { IconAgent, IconNote, IconTerminal, IconTrash, IconExternal, IconSwitch, IconWeb } from '../icons'
+import { useBoardLog } from '../../state/boardLog'
+import { boardLogEvents } from '../../lib/boardLogDiff'
+import { markWorkspaceDirty } from '../../state/workspaceDirty'
+import type { KanbanCreateChoice, KanbanSession } from './KanbanView'
+
+// One swimlane = one project's board
+interface SwimlaneProps {
+  projectId: string
+  projectName: string
+  projectColor?: string
+  board: ProjectKanban
+  sessions: KanbanSession[]
+  onChangeBoard: (next: ProjectKanban) => void
+  onOpenNode: (nodeId: string, projectId: string) => void
+  onCreateNode: (projectId: string, choice: KanbanCreateChoice, columnId: string | null) => void
+  onDeleteNode: (projectId: string, nodeId: string) => void
+  onRenameNode: (nodeId: string, title: string) => void
+  onEditSticky: (projectId: string, nodeId: string, text: string) => void
+  onBrowserNav: (projectId: string, nodeId: string, patch: { url?: string; title?: string }) => void
+  onModalChange: (nodeId: string | null) => void
+  highlight?: boolean
+}
+
+const Swimlane = memo(function Swimlane({
+  projectId, projectName, projectColor, board, sessions, onChangeBoard, onOpenNode, onCreateNode, onDeleteNode, onRenameNode, onEditSticky, onBrowserNav, onModalChange, highlight
+}: SwimlaneProps) {
+  const dragRef = useRef<{ kind: 'column'; id: string } | { kind: 'card'; id: string } | null>(null)
+  const [modalNodeId, setModalNodeId] = useState<string | null>(null)
+  const [cardMenu, setCardMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
+  const [labelFilter, setLabelFilter] = useState<string[]>([])
+  const customAgents = useSettings((s) => s.settings.customAgents)
+  const disabledAgents = useSettings((s) => s.settings.disabledAgents)
+
+  useEffect(() => { onModalChange(modalNodeId) }, [modalNodeId, onModalChange])
+
+  const requestedCardNodeId = useViewMode((s) => s.requestedCardNodeId)
+  useEffect(() => {
+    if (!requestedCardNodeId) return
+    if (sessions.some(s => s.id === requestedCardNodeId)) {
+      setModalNodeId(requestedCardNodeId)
+      useViewMode.getState().clearCardRequest()
+    }
+  }, [requestedCardNodeId, sessions])
+
+  const byId = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
+  const sessionIds = useMemo(() => sessions.map(s => s.id), [sessions])
+
+  const paletteLabels = useMemo(() => boardLabels(board), [board])
+  const localFilterKeys = useMemo(() => new Set(paletteLabels.map(l => `local:${l.id}`)), [paletteLabels])
+  const activeLocalFilter = useMemo(() => labelFilter.filter(id => localFilterKeys.has(id)).map(k => k.slice(6)), [labelFilter, localFilterKeys])
+
+  const labelsByCard = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof labelsForCard>>()
+    if (Array.isArray(board.meta)) {
+      for (const entry of board.meta) {
+        if (!entry?.nodeId) continue
+        const l = labelsForCard(board, entry.nodeId)
+        if (l.length) m.set(entry.nodeId, l)
+      }
+    }
+    return m
+  }, [board])
+
+  const commit = useCallback((next: ProjectKanban) => {
+    onChangeBoard(pruneAssignments(next, sessionIds))
+  }, [onChangeBoard, sessionIds])
+
+  const createOptions = useMemo(() => [
+    ...BUILTIN_AGENT_IDS.filter(id => !disabledAgents.includes(id)).map(id => ({
+      key: id, label: AGENT_CONFIG[id].label, choice: { kind: 'agent', agentId: id } as KanbanCreateChoice, icon: <IconAgent />
+    })),
+    ...customAgents.filter(a => !disabledAgents.includes(a.id)).map(a => ({
+      key: a.id, label: a.label, choice: { kind: 'agent', agentId: a.id } as KanbanCreateChoice, icon: <IconAgent />
+    })),
+    { key: 'terminal', label: 'Terminal', choice: { kind: 'terminal' } as KanbanCreateChoice, icon: <IconTerminal /> },
+    { key: 'browser', label: 'Browser', choice: { kind: 'browser' } as KanbanCreateChoice, icon: <IconWeb /> },
+    { key: 'sticky', label: 'Sticky note', choice: { kind: 'sticky' } as KanbanCreateChoice, icon: <IconNote /> }
+  ], [customAgents, disabledAgents])
+
+  const columnCards = useMemo(() => {
+    const vis = (ids: string[]) => activeLocalFilter.length ? ids.filter(id => cardMatchesLabelFilter(board, id, activeLocalFilter)) : ids
+    const toCards = (ids: string[]) => {
+      const cards = ids.flatMap(id => byId.has(id) ? [byId.get(id)!] : [])
+      return cards
+    }
+    return {
+      ungrouped: toCards(vis(unassigned(board, sessionIds))),
+      byColumn: new Map(board.columns.map(c => [c.id, toCards(vis(assignedTo(board, c.id)))]))
+    }
+  }, [board, byId, sessionIds, activeLocalFilter])
+
+  const handleCardDragStart = useCallback((id: string) => { dragRef.current = { kind: 'card', id } }, [])
+  const handleColumnDragStart = useCallback((id: string) => { dragRef.current = { kind: 'column', id } }, [])
+  const handleDragEnd = useCallback(() => { dragRef.current = null }, [])
+
+  const dropOnColumn = useCallback((columnId: string | null) => {
+    const drag = dragRef.current; dragRef.current = null; if (!drag) return
+    if (drag.kind === 'column') {
+      if (columnId !== null) commit(moveColumn(board, drag.id, columnId))
+    } else {
+      commit(assignNode(board, drag.id, columnId, null))
+    }
+  }, [board, commit])
+
+  const dropAtCard = useCallback((columnId: string | null, targetNodeId: string, side: 'before' | 'after') => {
+    const drag = dragRef.current; dragRef.current = null; if (!drag) return
+    if (drag.kind === 'column') {
+      if (columnId !== null) commit(moveColumn(board, drag.id, columnId))
+      return
+    }
+    const ids = columnId === null ? unassigned(board, sessionIds) : assignedTo(board, columnId)
+    let beforeId: string | null = targetNodeId
+    if (side === 'after') {
+      const i = ids.indexOf(targetNodeId)
+      beforeId = i >= 0 && i + 1 < ids.length ? ids[i+1] : null
+    }
+    commit(assignNode(board, drag.id, columnId, beforeId))
+  }, [board, commit, sessionIds])
+
+  const dropAtCardFor = useMemo(() => {
+    const cache = new Map<string, (nodeId: string, side: 'before' | 'after') => void>()
+    return (columnId: string | null) => {
+      const key = columnId ?? '\u0000ungrouped'
+      let bound = cache.get(key)
+      if (!bound) { bound = (nodeId, side) => dropAtCard(columnId, nodeId, side); cache.set(key, bound) }
+      return bound
+    }
+  }, [dropAtCard])
+
+  const lanesFor = (columnId: string | null): KanbanLane[] => {
+    const cards = columnId === null ? columnCards.ungrouped : columnCards.byColumn.get(columnId) ?? []
+    const onDropAt = dropAtCardFor(columnId)
+    return [{
+      sourceId: 'sessions' as const,
+      count: cards.length,
+      cards: cards.map(s => (
+        <SessionCard
+          key={s.id}
+          session={s}
+          meta={cardMeta(board, s.id)}
+          labels={labelsByCard.get(s.id) ?? []}
+          onOpen={setModalNodeId}
+          onContext={(id, x, y) => setCardMenu({ nodeId: id, x, y })}
+          onDragStart={handleCardDragStart}
+          onDragEnd={handleDragEnd}
+          onDropAt={onDropAt}
+        />
+      ))
+    }]
+  }
+
+  const cardMenuItems = (nodeId: string): MenuItem[] => {
+    const curColId = columnForNode(board, nodeId)?.id ?? null
+    const moveTargets: MenuItem[] = [
+      ...(curColId !== null ? [{ label: 'Ungrouped', onClick: () => commit(assignNode(board, nodeId, null, null)) }] : []),
+      ...board.columns.filter(c => c.id !== curColId).map(c => ({ label: c.title, onClick: () => commit(assignNode(board, nodeId, c.id, null)) }))
+    ]
+    return [
+      { label: 'Open card', icon: <IconExternal />, onClick: () => setModalNodeId(nodeId) },
+      { label: 'Open on canvas', icon: <IconExternal />, onClick: () => onOpenNode(nodeId, projectId) },
+      ...(moveTargets.length ? [{ type: 'submenu', label: 'Move to', icon: <IconSwitch />, children: moveTargets } as MenuItem] : []),
+      { type: 'separator' },
+      { label: 'Delete', icon: <IconTrash />, danger: true, onClick: () => onDeleteNode(projectId, nodeId) }
+    ]
+  }
+
+  return (
+    <div id={`swimlane-${projectId}`} className={`kanban-swimlane${highlight ? ' kanban-swimlane--highlight' : ''}`}>
+      <div className="kanban-swimlane__header">
+        <span className="kanban-header__dot" style={{ background: projectColor || '#444' }} />
+        <span className="kanban-header__name">{projectName}</span>
+        <span className="kanban-swimlane__count">{sessions.length} sessions</span>
+      </div>
+      <div className="kanban-board kanban-swimlane__board">
+        <div className="kanban-board__columns">
+          <KanbanColumn
+            column={null}
+            lanes={lanesFor(null)}
+            createOptions={createOptions}
+            onCreate={(choice, colId) => onCreateNode(projectId, choice, colId)}
+            onDragEnd={handleDragEnd}
+            onDropOnColumn={dropOnColumn}
+          />
+          {board.columns.map(col => (
+            <KanbanColumn
+              key={col.id}
+              column={col}
+              lanes={lanesFor(col.id)}
+              onRename={(id, t) => commit(renameColumn(board, id, t))}
+              onRecolor={(id, c) => commit(recolorColumn(board, id, c))}
+              onDelete={(id) => commit(deleteColumn(board, id))}
+              createOptions={createOptions}
+              onCreate={(choice, colId) => onCreateNode(projectId, choice, colId)}
+              onColumnDragStart={handleColumnDragStart}
+              onDragEnd={handleDragEnd}
+              onDropOnColumn={dropOnColumn}
+            />
+          ))}
+          <button className="kanban-add-col" onClick={() => commit(addColumn(board, 'New column', nextColumnColor(board)))}>+ Add column</button>
+        </div>
+      </div>
+      {cardMenu && byId.has(cardMenu.nodeId) && (
+        <ContextMenu x={cardMenu.x} y={cardMenu.y} zIndex={60} items={cardMenuItems(cardMenu.nodeId)} onClose={() => setCardMenu(null)} />
+      )}
+      {modalNodeId && byId.has(modalNodeId) && (
+        <CardModal
+          session={byId.get(modalNodeId)!}
+          columnTitle={columnForNode(board, modalNodeId)?.title ?? null}
+          board={board}
+          onChangeBoard={commit}
+          onClose={() => setModalNodeId(null)}
+          onOpenCanvas={() => { setModalNodeId(null); onOpenNode(modalNodeId, projectId) }}
+          onRename={(t) => onRenameNode(modalNodeId, t)}
+          onEditSticky={(t) => onEditSticky(projectId, modalNodeId, t)}
+          onBrowserNav={(patch) => onBrowserNav(projectId, modalNodeId, patch)}
+        />
+      )}
+    </div>
+  )
+})
+
+export const GlobalKanbanView = memo(function GlobalKanbanView() {
+  const projects = useProjects(s => s.projects.filter(p => !p.closed))
+  const { api } = useSession()
+  const modalRef = useRef<string | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Expose scroll-to-swimlane for Cmd+1..9
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ projectId: string }>) => {
+      const el = document.getElementById(`swimlane-${e.detail.projectId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        setHighlightId(e.detail.projectId)
+        setTimeout(() => setHighlightId(null), 1500)
+      }
+    }
+    window.addEventListener('nodeterm:swimlane-jump' as never, handler as never)
+    return () => window.removeEventListener('nodeterm:swimlane-jump' as never, handler as never)
+  }, [])
+
+  const onChangeBoard = useCallback((projectId: string, next: ProjectKanban) => {
+    const prev = useProjects.getState().getProject(projectId)?.kanban ?? defaultKanban()
+    useProjects.getState().setProjectKanban(projectId, next)
+    markWorkspaceDirty()
+    const cardTitle = (nodeId: string) => {
+      const proj = useProjects.getState().getProject(projectId)
+      const n = proj?.nodes.find(x => x.id === nodeId)
+      if (!n) return ''
+      const s = toKanbanSessionState(n as never)
+      return s ? s.title || 'Untitled' : ''
+    }
+    for (const { nodeId, event } of boardLogEvents(prev, next, cardTitle)) {
+      useBoardLog.getState().append(api, projectId, { kind: 'event', nodeId, event })
+    }
+  }, [api])
+
+  const onCreateNode = useCallback((projectId: string, choice: KanbanCreateChoice, columnId: string | null) => {
+    const project = useProjects.getState().getProject(projectId)
+    if (!project) return
+    const nodes = project.nodes
+    const index = nodes.length
+    const at = { x: 100 + index * 20, y: 100 + index * 20 }
+    let flowNode: import('../../state/workspace').CanvasNode | null = null
+    if (choice.kind === 'terminal') flowNode = createTerminalNode(index, project.cwd, at, undefined, project.ssh)
+    else if (choice.kind === 'sticky') flowNode = createStickyNode(index, at)
+    else if (choice.kind === 'browser') flowNode = createBrowserNode(index, '', at)
+    else {
+      const acc = resolveNewNodeAccount(undefined, project as never, useSettings.getState().settings.claudeAccounts)
+      flowNode = createAgentNode(choice.agentId, index, project.cwd, at, undefined, project.ssh, acc, activePermissionMode(choice.agentId), projectId)
+    }
+    if (!flowNode) return
+    const stateNode = flowToNodeStates([flowNode])[0]
+    const prevNodes = [...project.nodes, stateNode]
+    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: prevNodes } : p) }))
+    markWorkspaceDirty()
+    const board = project.kanban ?? defaultKanban()
+    if (columnId) {
+      useProjects.getState().setProjectKanban(projectId, assignNode(board, stateNode.id, columnId, null))
+      markWorkspaceDirty()
+    }
+  }, [])
+
+  const onDeleteNode = useCallback((projectId: string, nodeId: string) => {
+    const proj = useProjects.getState().getProject(projectId)
+    const label = proj?.nodes.find(n => n.id === nodeId)?.title || 'this session'
+    if (!confirm(`Delete ${label}? Its terminal session will end.`)) return
+    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.filter(n => n.id !== nodeId) } : p) }))
+    markWorkspaceDirty()
+    // best-effort kill tmux session (works for local and remote via api)
+    try { (api as unknown as { pty: { destroy: (id: string) => void } }).pty.destroy(nodeId as never) } catch {}
+    try { (window as unknown as { nodeTerminal?: { pty: { destroy: (id: string) => void } } }).nodeTerminal?.pty.destroy(nodeId) } catch {}
+  }, [api])
+
+  const onRenameNode = useCallback((nodeId: string, title: string) => {
+    // find owning project
+    const proj = useProjects.getState().projects.find(p => p.nodes.some(n => n.id === nodeId))
+    if (!proj) return
+    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === proj.id ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, title, titleAuto: false } : n) } : p) }))
+  }, [])
+
+  const onEditSticky = useCallback((projectId: string, nodeId: string, text: string) => {
+    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, text } as never : n) } : p) }))
+    markWorkspaceDirty()
+  }, [])
+
+  const onBrowserNav = useCallback((projectId: string, nodeId: string, patch: { url?: string; title?: string }) => {
+    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, ...patch } as never : n) } : p) }))
+    markWorkspaceDirty()
+  }, [])
+
+  const onOpenNode = useCallback((nodeId: string, _projectId: string) => {
+    const vm = useViewMode.getState()
+    if (vm.globalKanban) vm.toggleGlobalKanban()
+    // Let Canvas's focusNodeById handle project switching and canvas framing
+    setTimeout(() => window.dispatchEvent(new CustomEvent('nodeterm:focus-node', { detail: { nodeId } })), 50)
+  }, [])
+
+  if (projects.length === 0) {
+    return (
+      <div className="kanban-overlay global-kanban">
+        <div className="kanban-header"><span className="kanban-header__name">All Projects — Kanban</span></div>
+        <div className="kanban-empty">No projects yet. Create a project to see its swimlane.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="kanban-overlay global-kanban" ref={containerRef}>
+      <div className="kanban-header">
+        <span className="kanban-header__name">All Projects</span>
+        <span className="kanban-swimlane__hint">{projects.length} projects — Cmd+1..{Math.min(9, projects.length)} to jump</span>
+        <button
+          className="kanban-header__close"
+          title="Back to canvas (Cmd+Shift+B)"
+          onClick={() => useViewMode.getState().toggleGlobalKanban()}
+        >
+          ✕
+        </button>
+      </div>
+      <div className="global-kanban__scroll">
+        {projects.map((p, idx) => {
+          const board = p.kanban ?? defaultKanban()
+          const sessions = p.nodes.map(n => toKanbanSessionState(n as never)).filter((s): s is KanbanSession => s !== null)
+          return (
+            <Swimlane
+              key={p.id}
+              projectId={p.id}
+              projectName={`${idx+1}. ${p.name}`}
+              projectColor={p.color}
+              board={board}
+              sessions={sessions}
+              onChangeBoard={next => onChangeBoard(p.id, next)}
+              onOpenNode={onOpenNode}
+              onCreateNode={onCreateNode}
+              onDeleteNode={onDeleteNode}
+              onRenameNode={onRenameNode}
+              onEditSticky={onEditSticky}
+              onBrowserNav={onBrowserNav}
+              onModalChange={id => { modalRef.current = id }}
+              highlight={highlightId === p.id}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+})
