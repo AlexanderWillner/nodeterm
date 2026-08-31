@@ -802,7 +802,13 @@ export function terminalKeyAction(
     !e.altKey
   )
     return 'shift-enter'
-  if (ownsProjectJump) return 'swallow'
+  // `ownsProjectJump` is a bubble, not a swallow: it must reach the window dispatcher
+  // that performs the actual project switch (see `lib/projectJump.ts` + Canvas
+  // `projectJumpGesture`), while still preventing xterm's control-byte write (Ctrl+2..8 are
+  // ^@ ^[ etc.). Swallowing with preventDefault would mark the event handled and the
+  // dispatcher bails on defaultPrevented — which is why Cmd+1 from a focused terminal
+  // (canvas or kanban modal) stopped switching.
+  if (ownsProjectJump) return 'bubble'
   const base = copyKeyAction(e, hasSelection)
   if (base !== 'pass') return base
   // `registryOwns` — decided by the caller via `terminalChordBubbles`, the same live-registry
