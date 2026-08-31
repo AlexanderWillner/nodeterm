@@ -36,14 +36,34 @@ less compatible** (one extra failure: `localStorage.clear` in `cardModalSize` �
 jsdom/happy-dom shim difference). Re-run with `BENCH_REPEAT=3 BENCH_WARMUP=1` for
 stable numbers; install with `BENCH_INSTALL=1`.
 
-Full tables and methodology are in `scripts/bench.mjs` — run:
+Full tables and methodology are in `scripts/bench.mjs` and `scripts/bench-runtime.mjs` — run:
 
 ```bash
-node scripts/bench.mjs                        # wall-time only
+node scripts/bench.mjs                        # wall-time only (typecheck/build)
 BENCH_REPEAT=3 BENCH_WARMUP=1 node scripts/bench.mjs
 BENCH_INSTALL=1 node scripts/bench.mjs        # includes destructive clean install bench
 bun scripts/bench.mjs                         # same via Bun
+
+node scripts/bench-runtime.mjs                # Laufzeit: Server RSS/CPU/Throughput
+BENCH_REQUESTS=1000 node scripts/bench-runtime.mjs
 ```
+
+## Laufzeit: Server & Host (Node vs Bun)
+
+Electron-Desktop kann nicht auf Bun umgestellt werden (embeddet Node). Gemessen wurde die **Server Edition** (`out/server/main.cjs`) und der **Session-Host** (`out/session-host/host.cjs`) — die beiden reinen Node-Prozesse, die Bun tatsächlich ersetzen kann. Jeweils `node <bundle>` vs `bun <bundle>`, 500–1000 HTTP-Requests (401-Pfad) gegen frischen Temp-`dataDir`, `ps -o rss` für RSS, `fetch`-Loop für Latenz/RPS. Host: MacBook Air M2, 8c/24 GB, bun 1.4.0 (34cbb9a), node 26.7.0, gemessen 31.08.2026.
+
+| Prozess | Node | Bun | Delta |
+|---|---|---|---|
+| **Server — idle RSS** | ~70 MB | ~46 MB | **−34 %** (Bun) |
+| **Server — load RSS** (nach 500–1000 Requests) | ~78–80 MB | ~55–61 MB | **−28 %** (Bun) |
+| **Server — Start bis listening** | ~98–120 ms | ~71–92 ms | **−20 %** (Bun, streut stark) |
+| **Server — RPS / avg Latenz** (500–1000× `GET /` → 401) | ~3800–5800 rps / 0.17–0.39 ms | ~4200–8300 rps / 0.12–0.23 ms | **kein robuster Unterschied** — Streuung 30–50 % auf dem Laptop, im Mittel ±10 %, mal Node schneller, mal Bun. CPU-lastige Pfade zeigen keinen belastbaren Gewinn. |
+| **Session-Host — idle RSS** (`/tmp/...` dataDir) | ~56 MB | ~31 MB | **−45 %** (Bun) |
+| **Electron Main** (Desktop) | — | — | **unverändert** — läuft immer auf Electrons eigenem Node (v22), nicht ersetzbar |
+
+Methodik: `scripts/bench-runtime.mjs` spawnt `node|bun out/server/main.cjs --port 0 --data-dir <tmp>`, wartet auf `listening on http 127.0.0.1:<port>`, macht `BENCH_REQUESTS` fetches (Warmup 20), misst RSS vor/nach via `ps`, vergleicht 3 Läufe. Einzelwerte oben sind Roh-RSS; `time -l` Peak-RSS für den Host-Prozess selbst ist nicht sinnvoll (kurzlebig), daher `ps` im Live-Prozess.
+
+Fazit Laufzeit: **Weniger RAM ja (−30 % Server, −45 % Host) — weniger CPU nein.** Für die Server Edition auf einem kleinen VPS (1 GB) ist der RAM-Gewinn relevant (ca. 25 MB pro Instanz plus ~25 MB pro Host). CPU/Durchsatz ist auf diesem IO-lastigen 401-Pfad nicht signifikant — wer CPU spart, muss woanders suchen (z. B. `bun --bun` für CPU-Knoten wie `tsc` bringt dort 1.3×, `vitest` aber 0.93×). Der größte Hebel bleibt `bun install` in CI.
 
 ## Changes on this branch vs `main`
 
@@ -73,8 +93,8 @@ bun scripts/bench.mjs                         # same via Bun
 ## Recommendation
 
 Ship `bun install` as a **supported alternative** (keep `package-lock.json`), do not
-yet replace `vitest`'s runtime with `bun --bun`. The 2–3× install win and modest
-script-runner win are worth the dual-lockfile cost; the Electron runtime is not
-migratable. If the goal is CI minutes, swapping `npm ci` for `bun install` in one
-job is the highest-ROI change (≈27 s saved per run on this host vs ≈5 s for the build).
+yet replace `vitest`'s runtime with `bun --bun`. The 2–3× install win, ~30 % weniger RSS in der Laufzeit und modest
+script-runner win sind den Dual-Lockfile-Preis wert; die Electron-Runtime ist nicht
+migratable, und CPU bleibt gleich. If the goal is CI minutes, swapping `npm ci` for `bun install` in one
+job is the highest-ROI change (≈27 s saved per run on this host vs ≈5 s for the build); für kleine Server ist der RAM-Gewinn der zweite Hebel.
 
