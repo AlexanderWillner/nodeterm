@@ -1,0 +1,51 @@
+name: CI (Bun)
+
+# Bun variant of the quality gate — runs only on the bun-migration branch
+# (and on PRs targeting it) so main is not affected while the experiment
+# lives. Mirrors the npm job step-for-step, swapping npm ci / npm run for
+# bun install / bun run to measure speedup + memory and to catch
+# bun-specific breakage (lifecycle, native rebuild, vitest compat).
+#
+# Bun 1.4 per https://bun.com/blog/bun-v1.4 — install + script-runner wins
+# should be visible here; Electron itself still runs on its embedded Node,
+# so the main-process runtime is not replaced.
+
+on:
+  push:
+    branches: [chore/bun-migration, experiment/bun-1.4]
+  pull_request:
+    branches: [chore/bun-migration, experiment/bun-1.4]
+
+permissions:
+  contents: read
+
+jobs:
+  quality-bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.0'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          # Node is still needed for electron-rebuild (native modules are
+          # compiled against Electron's Node ABI, not Bun's).
+
+      - name: Install dependencies (bun)
+        run: bun install
+
+      - name: Type check (bun)
+        run: bun run typecheck
+
+      - name: Tests (bun)
+        run: bun run test
+
+      - name: Build (bun)
+        run: bun run build
+
+      - name: Server build (bun)
+        run: bun run server:build

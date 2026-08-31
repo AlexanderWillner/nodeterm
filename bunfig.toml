@@ -1,0 +1,15 @@
+# Bun config for nodeterm — branch chore/bun-migration
+# See https://bun.sh/docs/runtime/bunfig
+
+[install]
+# Packages with lifecycle scripts that we trust to run on `bun install`.
+# Must stay in sync with package.json#trustedDependencies.
+trustedDependencies = ["electron", "electron-builder", "esbuild", "node-pty", "sharp", "smart-whisper", "@electron/rebuild", "jsdom"]
+
+# Use text lockfile `bun.lock` (default since Bun 1.2). Keep `package-lock.json`
+# for npm fallback during the experiment.
+lockfile = "bun.lock"
+
+[test]
+# vitest is the canonical runner. `bun test` is not used for this repo.
+# Keep bun's built-in test runner disabled by default.
