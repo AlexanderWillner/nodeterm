@@ -43,6 +43,9 @@ interface ViewModeState {
   /** Global swimlane overview — when true, kanban shows all projects as swimlanes instead of per-project tabs. */
   globalKanban: boolean
   toggleGlobalKanban(): void
+  /** Which swimlane is currently highlighted in the global overview (jump target). */
+  highlightedSwimlaneId: string | null
+  setHighlightedSwimlaneId(id: string | null): void
   /**
    * A node whose CARD should be opened on the board, set by anything that "goes to" a node while
    * the board is up — the notch HUD's Go, a notification click, ⌘K, the sessions sidebar. Those
@@ -76,6 +79,8 @@ export const useViewMode = create<ViewModeState>((set) => ({
   viewByProject: parseViewMap(readLocal(PROJECT_VIEW_KEY)),
   defaultView: 'canvas',
   globalKanban: readGlobalKanban(),
+  highlightedSwimlaneId: null,
+  setHighlightedSwimlaneId: (id) => set({ highlightedSwimlaneId: id }),
   setDefaultView: (v) => set((s) => (s.defaultView === v ? s : { defaultView: v })),
   requestedCardNodeId: null,
   requestCard: (nodeId) => set({ requestedCardNodeId: nodeId }),
@@ -97,7 +102,7 @@ export const useViewMode = create<ViewModeState>((set) => ({
     set((s) => {
       const next = !s.globalKanban
       saveGlobalKanban(next)
-      return { globalKanban: next, requestedCardNodeId: null }
+      return { globalKanban: next, requestedCardNodeId: null, highlightedSwimlaneId: null }
     })
 }))
 

@@ -250,14 +250,15 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   const projects = useProjects(s => s.projects.filter(p => !p.closed))
   const { api } = useSession()
   const modalRef = useRef<string | null>(null)
-  const [highlightId, setHighlightId] = useState<string | null>(null)
+  const highlightId = useViewMode(s => s.highlightedSwimlaneId)
+  const setHighlightId = useViewMode(s => s.setHighlightedSwimlaneId)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const jumpTo = useCallback((projectId: string) => {
     document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setHighlightId(projectId)
     setTimeout(() => setHighlightId(null), 1500)
-  }, [])
+  }, [setHighlightId])
 
   // Expose scroll-to-swimlane for Cmd+1..9
   useEffect(() => {

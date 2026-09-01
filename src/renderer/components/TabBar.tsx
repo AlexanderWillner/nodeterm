@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjects } from '../state/projects'
-import { isGlobalKanbanOpen, useViewMode, viewFor } from '../state/viewMode'
+import { useViewMode, viewFor } from '../state/viewMode'
 import { useAgentStatus } from '../state/agentStatus'
 import { useSettings } from '../state/settings'
 import { accountsForProject, sshAccountsHint, systemAccountDisplay } from '../state/workspace'
@@ -88,7 +88,10 @@ export function TabBar({
   const projects = useMemo(() => allProjects.filter((p) => !p.closed), [allProjects])
   const activeId = useProjects((s) => s.activeProjectId)
   const omniEnabled = useSettings((s) => s.settings.omniKanbanEnabled !== false)
+  const globalKanban = useViewMode((s) => s.globalKanban)
+  const isGlobal = omniEnabled && globalKanban
   const kanbanActive = useViewMode((s) => (omniEnabled && s.globalKanban) || (!!activeId && viewFor(s, activeId) === 'kanban'))
+  const highlightedId = useViewMode((s) => s.highlightedSwimlaneId)
   // Unread dots need only the unread id set — subscribing to the whole status map re-rendered
   // the TabBar on every working/waiting flip of any agent. Primitive signature → rare updates.
   const unreadIds = useAgentStatus((s) => {
@@ -251,7 +254,7 @@ export function TabBar({
           }}
         >
           {projects.map((p) => {
-            const active = p.id === activeId
+            const active = isGlobal ? (highlightedId ? p.id === highlightedId : p.id === activeId) : p.id === activeId
             const unreadCount = p.nodes.filter((n) => unreadSet.has(n.id)).length
             return (
               <div
@@ -289,7 +292,7 @@ export function TabBar({
                   if (editingId) return
                   // In global swimlane overview, clicking the top project tab jumps to its
                   // swimlane instead of switching the canvas project (analog zu Cmd+1..9).
-                  if (isGlobalKanbanOpen()) {
+                  if (isGlobal) {
                     window.dispatchEvent(new CustomEvent('nodeterm:swimlane-jump', { detail: { projectId: p.id } }))
                     return
                   }
