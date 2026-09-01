@@ -370,16 +370,20 @@ export function TabBar({
                     onClick={(e) => {
                       e.stopPropagation() // a tab click switches projects, this only flips the view
                       const vm = useViewMode.getState()
-                      const omni = isOmniKanbanEnabled(useSettings.getState().settings)
-                      if (omni) {
-                        if (vm.globalKanban || viewFor(vm, p.id) === 'kanban') {
-                          if (vm.globalKanban) vm.toggleGlobalKanban()
-                          if (viewFor(vm, p.id) === 'kanban') vm.toggle(p.id)
-                        } else {
-                          vm.toggleGlobalKanban()
-                        }
+                      const settings = useSettings.getState().settings
+                      const omni = isOmniKanbanEnabled(settings)
+                      const asDefault = settings.omniKanbanAsDefault === true
+                      // Closing: global overlay is exclusive — any board toggle while it's open closes it.
+                      if (vm.globalKanban) {
+                        vm.toggleGlobalKanban()
+                        return
+                      }
+                      if (omni && asDefault) {
+                        vm.toggleGlobalKanban()
                       } else {
-                        vm.toggle(p.id)
+                        // Per-project board for this tab (also closes an open per-project board)
+                        if (viewFor(vm, p.id) === 'kanban') vm.toggle(p.id)
+                        else vm.toggle(p.id)
                       }
                     }}
                   >

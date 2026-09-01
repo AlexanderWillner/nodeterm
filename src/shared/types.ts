@@ -1217,8 +1217,13 @@ export interface Settings {
   defaultProjectView: 'canvas' | 'kanban'
   /** Global swimlane kanban overview (Omni-Kanban): when enabled, the kanban board shows all
    *  open projects as stacked swimlanes instead of per-project tabs. Toggle in Settings →
-   *  Behavior. Default ON for new installs; existing settings.json without the key migrates to ON. */
+   *  Behavior. Default OFF — no silent behavior change for existing users; `globalKanban`
+   *  (the view flag) is only honored when this is true. */
   omniKanbanEnabled: boolean
+  /** When enabled, Cmd+Shift+B (view.kanbanToggle) opens the global Omni board instead of the
+   *  per-project board. The dedicated global shortcut (view.globalKanbanToggle) always opens
+   *  Omni regardless of this setting. Opt-in, per user — default OFF. */
+  omniKanbanAsDefault: boolean
   /** New-worktree path template, resolved relative to the repository root. Supports `$repoName`
    *  (`$reponame` and `$defaultFolderName` aliases) plus `$branch`; both `$x` and `${x}` forms.
    *  A missing branch token is appended automatically. */
@@ -1524,7 +1529,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sidebarCollapsedItems: {},
   sidebarGrouping: 'project',
   defaultProjectView: 'canvas',
-  omniKanbanEnabled: true,
+  omniKanbanEnabled: false,
+  omniKanbanAsDefault: false,
   worktreePathTemplate: DEFAULT_WORKTREE_PATH_TEMPLATE,
   panHoverDelay: 600,
   doubleClickFocus: true,

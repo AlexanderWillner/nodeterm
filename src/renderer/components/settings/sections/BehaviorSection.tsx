@@ -20,6 +20,10 @@ const ROWS = {
     title: 'Omni Kanban (global swimlanes)',
     keywords: ['omni', 'kanban', 'swimlane', 'global', 'overview', 'board', 'project']
   },
+  omniKanbanDefault: {
+    title: 'Omni as default for Cmd+Shift+B',
+    keywords: ['omni', 'kanban', 'global', 'default', 'shortcut', 'cmd', 'shift', 'b']
+  },
   gridSize: { title: 'Grid size', keywords: ['grid', 'size', 'snap'] },
   nodeSize: {
     title: 'Default node size',
@@ -100,12 +104,25 @@ export function BehaviorSection({ isActive }: { isActive: boolean }): React.JSX.
       <SearchableRow {...ROWS.omniKanban}>
         <FieldRow
           label="Omni Kanban (global swimlanes)"
-          description="When enabled, the kanban board shows all open projects as stacked swimlanes in one overview. Cmd+1..9 jumps to swimlanes, clicking a project pill jumps as well. Disable to keep per-project tabs."
+          description="When enabled, the global Kanban overview is available via its dedicated shortcut (Settings → Keyboard Shortcuts → Toggle global kanban). Default OFF — existing users see no change."
           control={
             <Switch
-              checked={settings.omniKanbanEnabled ?? true}
+              checked={settings.omniKanbanEnabled === true}
               onChange={(v) => update({ omniKanbanEnabled: v })}
               ariaLabel="Omni Kanban"
+            />
+          }
+        />
+      </SearchableRow>
+      <SearchableRow {...ROWS.omniKanbanDefault}>
+        <FieldRow
+          label="Make Omni the default for Cmd+Shift+B"
+          description="When enabled, Cmd+Shift+B opens the global overview instead of the per-project board. The dedicated global shortcut always opens Omni regardless. Opt-in, per user."
+          control={
+            <Switch
+              checked={settings.omniKanbanAsDefault === true}
+              onChange={(v) => update({ omniKanbanAsDefault: v })}
+              ariaLabel="Omni as default"
             />
           }
         />

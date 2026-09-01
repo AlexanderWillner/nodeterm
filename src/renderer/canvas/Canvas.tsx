@@ -6540,9 +6540,16 @@ export function Canvas() {
       'app.settings': () => { setSettingsSection(undefined); setSettingsOpen(true); return true },
       'app.shortcutsPanel': () => { setShortcutsOpen((v) => !v); return true },
       'view.kanbanToggle': () => {
-        const omniEnabled = isOmniKanbanEnabled(useSettings.getState().settings)
-        if (omniEnabled) {
-          // Ensure the active lane is not stale when the overview opens (live nodes → serialized p.nodes).
+        // Global board is an overlay — any toggle while it's open closes it.
+        if (isGlobalKanbanOpen()) {
+          useViewMode.getState().toggleGlobalKanban()
+          return true
+        }
+        const settings = useSettings.getState().settings
+        const omniEnabled = isOmniKanbanEnabled(settings)
+        const asDefault = settings.omniKanbanAsDefault === true
+        if (omniEnabled && asDefault) {
+          // Opt-in: Cmd+Shift+B opens Omni when the user lives in the global view.
           if (!isGlobalKanbanOpen()) commitActiveToStore()
           useViewMode.getState().toggleGlobalKanban()
         } else {
@@ -6550,6 +6557,12 @@ export function Canvas() {
           if (!id) return false
           useViewMode.getState().toggle(id)
         }
+        return true
+      },
+      'view.globalKanbanToggle': () => {
+        if (!isOmniKanbanEnabled(useSettings.getState().settings)) return false
+        if (!isGlobalKanbanOpen()) commitActiveToStore()
+        useViewMode.getState().toggleGlobalKanban()
         return true
       },
       'view.focusMode': () => { toggleFocusMode(); return true },

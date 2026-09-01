@@ -68,13 +68,12 @@ export function viewFor(s: Pick<ViewModeState, 'viewByProject' | 'defaultView'>,
 /**
  * Feature flag: does the global swimlane overview exist at all?
  * `settings.omniKanbanEnabled` is the *feature* toggle (Settings → Behavior → Omni Kanban,
- * default ON, `true` when the key is absent for existing installs). `globalKanban` below is the
- * *view* toggle (whether the overview is currently shown). The two have opposite defaults
- * deliberately: the feature is on, the view is off until the user opens it. Use this helper
- * instead of spelling `!== false` inline — five call sites were doing it.
+ * default OFF — no silent behavior change for existing users). `globalKanban` below is the
+ * *view* toggle (whether the overview is currently shown). Use this helper instead of
+ * spelling the check inline.
  */
 export function isOmniKanbanEnabled(settings: { omniKanbanEnabled?: boolean }): boolean {
-  return settings.omniKanbanEnabled !== false
+  return settings.omniKanbanEnabled === true
 }
 
 function readGlobalKanban(): boolean {
