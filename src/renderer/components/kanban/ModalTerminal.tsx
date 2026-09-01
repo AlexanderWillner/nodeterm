@@ -57,6 +57,8 @@ export interface ModalSpawn {
   ssh?: SshConnection
   /** SSH-project node: tmux runs on the REMOTE host (over the project's ControlMaster). */
   sshRemoteTmux?: boolean
+  /** One-shot launch command for a fresh session (agent CLIs). */
+  initialCommand?: string
 }
 
 /**
@@ -328,6 +330,17 @@ export function ModalTerminal({ nodeId, spawn, searchOpen, onCloseSearch }: Moda
           term.write('\r\n\x1b[90m[session ended]\x1b[0m\r\n')
         )
       )
+      // For a fresh session created from the global swimlane kanban (or any card modal
+      // that is the first spawner), the one-shot initialCommand must be delivered here —
+      // the canvas TerminalNode that normally does this never mounted for non-active
+      // projects, so the modal is the first and only client. Without this, an opencode
+      // card would open as an empty shell and immediately appear to close.
+      if (res.fresh && spawn.initialCommand) {
+        // Small delay to let the shell initialize, matching TerminalNode's writeWhenShellReady
+        setTimeout(() => {
+          if (!dead && sessionId) transport.write(sessionId, spawn.initialCommand + '\r')
+        }, 300)
+      }
       // The pty runs at the SMALLEST subscriber's grid; render exactly what it tells us and letterbox
       // the rest (the canvas node votes independently — the modal's smaller pane may shrink it).
       if (transport.onSize)

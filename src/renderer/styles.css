@@ -8757,8 +8757,13 @@ button.group-node__setup:disabled {
   border-radius: 12px;
   background: rgba(var(--tint-rgb), 0.02);
   scroll-margin-top: 12px;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
   box-shadow: 0 2px 12px rgba(0, 0, 0, calc(0.12 * var(--shadow-k)));
+}
+.kanban-swimlane:has(.kanban-col__newmenu) {
+  z-index: 10;
 }
 .kanban-swimlane:nth-child(even) {
   background: rgba(var(--tint-rgb), 0.035);

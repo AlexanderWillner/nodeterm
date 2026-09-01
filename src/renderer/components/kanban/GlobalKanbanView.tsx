@@ -283,29 +283,11 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   }, [api])
 
   const onCreateNode = useCallback((projectId: string, choice: KanbanCreateChoice, columnId: string | null) => {
-    const project = useProjects.getState().getProject(projectId)
-    if (!project) return
-    const nodes = project.nodes
-    const index = nodes.length
-    const at = { x: 100 + index * 20, y: 100 + index * 20 }
-    let flowNode: import('../../state/workspace').CanvasNode | null = null
-    if (choice.kind === 'terminal') flowNode = createTerminalNode(index, project.cwd, at, undefined, project.ssh)
-    else if (choice.kind === 'sticky') flowNode = createStickyNode(index, at)
-    else if (choice.kind === 'browser') flowNode = createBrowserNode(index, '', at)
-    else {
-      const acc = resolveNewNodeAccount(undefined, project as never, useSettings.getState().settings.claudeAccounts)
-      flowNode = createAgentNode(choice.agentId, index, project.cwd, at, undefined, project.ssh, acc, activePermissionMode(choice.agentId), projectId)
-    }
-    if (!flowNode) return
-    const stateNode = flowToNodeStates([flowNode])[0]
-    const prevNodes = [...project.nodes, stateNode]
-    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: prevNodes } : p) }))
-    markWorkspaceDirty()
-    const board = project.kanban ?? defaultKanban()
-    if (columnId) {
-      useProjects.getState().setProjectKanban(projectId, assignNode(board, stateNode.id, columnId, null))
-      markWorkspaceDirty()
-    }
+    // Delegate to Canvas's createNodeInColumn which correctly mounts the TerminalNode
+    // and starts the tmux session (via transport.create). Direct store manipulation
+    // would leave the tmux session unstarted for non-active projects, causing the
+    // card's modal to open a fresh empty session that immediately closes.
+    window.dispatchEvent(new CustomEvent('nodeterm:create-node', { detail: { projectId, choice, columnId } }))
   }, [])
 
   const onDeleteNode = useCallback((projectId: string, nodeId: string) => {

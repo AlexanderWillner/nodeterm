@@ -7641,6 +7641,24 @@ export function Canvas() {
     return () => window.removeEventListener('nodeterm:focus-node' as never, handler as never)
   }, [focusNodeById])
 
+  // Global kanban swimlane "New session" path — creates a node in the target project's
+  // swimlane even when that project is not the active canvas. The per-column create
+  // menu in GlobalKanbanView dispatches this, and we switch to the target project
+  // first so the new TerminalNode mounts and its tmux session starts correctly.
+  useEffect(() => {
+    const handler = (e: CustomEvent<{ projectId: string; choice: KanbanCreateChoice; columnId: string | null }>) => {
+      const { projectId, choice, columnId } = e.detail
+      if (projectId !== useProjects.getState().activeProjectId) {
+        switchProject(projectId)
+        setTimeout(() => createNodeInColumn(choice, columnId), 120)
+      } else {
+        createNodeInColumn(choice, columnId)
+      }
+    }
+    window.addEventListener('nodeterm:create-node' as never, handler as never)
+    return () => window.removeEventListener('nodeterm:create-node' as never, handler as never)
+  }, [createNodeInColumn, switchProject])
+
   // Session board cards are derived LIVE from the canvas nodes; the board stores only assignments.
   // Only while the board is OPEN: `nodes` gets a fresh identity on every drag frame, so a closed
   // board was rebuilding a card object per node ~60×/s for a surface that is not mounted. The

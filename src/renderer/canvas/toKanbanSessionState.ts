@@ -28,6 +28,8 @@ export function toKanbanSessionState(n: CanvasNodeState): KanbanSession | null {
     }
   }
   if (n.kind !== 'terminal') return null
+  const raw = n as unknown as Record<string, unknown>
+  const initialCommand = (raw.initialCommand as string | undefined) ?? (raw.pendingLaunch as { command?: string } | undefined)?.command
   return {
     id: n.id,
     title: n.title ?? '',
@@ -40,7 +42,8 @@ export function toKanbanSessionState(n: CanvasNodeState): KanbanSession | null {
       agentId: n.agentId as string | undefined,
       accountId: n.accountId as string | undefined,
       ssh: n.ssh,
-      sshRemoteTmux: !!n.sshRemoteTmux
-    }
+      sshRemoteTmux: !!n.sshRemoteTmux,
+      ...(initialCommand ? { initialCommand } : {})
+    } as never
   }
 }
