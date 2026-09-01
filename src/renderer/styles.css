@@ -8739,16 +8739,15 @@ button.group-node__setup:disabled {
 }
 /* Global swimlane kanban — one swimlane per project */
 .global-kanban {
-  /* same base as .kanban-overlay but with vertical scroll for swimlanes */
-}
-.global-kanban__scroll {
-  flex: 1 1 0;
-  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: block;
+}
+.global-kanban__scroll {
+  display: block;
+  overflow: visible;
+  flex: none;
+  min-height: auto;
   padding-bottom: 24px;
 }
 .kanban-swimlane {
