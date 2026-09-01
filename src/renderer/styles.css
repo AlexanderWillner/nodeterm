@@ -8798,6 +8798,17 @@ button.group-node__setup:disabled {
 .kanban-swimlane__header:hover {
   background: rgba(var(--tint-rgb), 0.06);
 }
+.kanban-swimlane__header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.kanban-swimlane__toggle {
+  width: 12px;
+  color: rgba(var(--tint-rgb), 0.55);
+  font-size: 12px;
+  text-align: center;
+  flex: 0 0 12px;
+}
 .kanban-swimlane__count {
   margin-left: auto;
   font-size: 11px;

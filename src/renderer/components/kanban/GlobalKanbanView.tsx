@@ -48,6 +48,7 @@ const Swimlane = memo(function Swimlane({
   const [modalNodeId, setModalNodeId] = useState<string | null>(null)
   const [cardMenu, setCardMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null)
   const [labelFilter, setLabelFilter] = useState<string[]>([])
+  const [collapsed, setCollapsed] = useState(false)
   const customAgents = useSettings((s) => s.settings.customAgents)
   const disabledAgents = useSettings((s) => s.settings.disabledAgents)
 
@@ -184,49 +185,65 @@ const Swimlane = memo(function Swimlane({
     ]
   }
 
-  const jumpToSelf = () => {
+  const toggleCollapsed = () => {
     document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     useViewMode.getState().setHighlightedSwimlaneId(projectId)
+    setCollapsed((value) => !value)
   }
   return (
     <div
       id={`swimlane-${projectId}`}
-      className={`kanban-swimlane${highlight ? ' kanban-swimlane--highlight' : ''}`}
+      className={`kanban-swimlane${highlight ? ' kanban-swimlane--highlight' : ''}${collapsed ? ' kanban-swimlane--collapsed' : ''}`}
       style={{ ['--swimlane-color' as string]: projectColor || 'rgba(128,128,128,0.3)' }}
     >
-      <div className="kanban-swimlane__header" onClick={jumpToSelf} title="Zum Anfang dieser Swimlane springen">
+      <div
+        className="kanban-swimlane__header"
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+        onClick={toggleCollapsed}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          toggleCollapsed()
+        }}
+        title={collapsed ? 'Expand swimlane' : 'Collapse swimlane'}
+      >
+        <span className="kanban-swimlane__toggle" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
         <span className="kanban-header__dot" style={{ background: projectColor || '#444' }} />
         <span className="kanban-header__name">{projectName}</span>
         <span className="kanban-swimlane__count">{sessions.length} sessions</span>
       </div>
-      <div className="kanban-board kanban-swimlane__board">
-        <div className="kanban-board__columns">
-          <KanbanColumn
-            column={null}
-            lanes={lanesFor(null)}
-            createOptions={createOptions}
-            onCreate={(choice, colId) => onCreateNode(projectId, choice, colId)}
-            onDragEnd={handleDragEnd}
-            onDropOnColumn={dropOnColumn}
-          />
-          {board.columns.map(col => (
+      {!collapsed && (
+        <div className="kanban-board kanban-swimlane__board">
+          <div className="kanban-board__columns">
             <KanbanColumn
-              key={col.id}
-              column={col}
-              lanes={lanesFor(col.id)}
-              onRename={(id, t) => commit(renameColumn(board, id, t))}
-              onRecolor={(id, c) => commit(recolorColumn(board, id, c))}
-              onDelete={(id) => commit(deleteColumn(board, id))}
+              column={null}
+              lanes={lanesFor(null)}
               createOptions={createOptions}
               onCreate={(choice, colId) => onCreateNode(projectId, choice, colId)}
-              onColumnDragStart={handleColumnDragStart}
               onDragEnd={handleDragEnd}
               onDropOnColumn={dropOnColumn}
             />
-          ))}
-          <button className="kanban-add-col" onClick={() => commit(addColumn(board, 'New column', nextColumnColor(board)))}>+ Add column</button>
+            {board.columns.map(col => (
+              <KanbanColumn
+                key={col.id}
+                column={col}
+                lanes={lanesFor(col.id)}
+                onRename={(id, t) => commit(renameColumn(board, id, t))}
+                onRecolor={(id, c) => commit(recolorColumn(board, id, c))}
+                onDelete={(id) => commit(deleteColumn(board, id))}
+                createOptions={createOptions}
+                onCreate={(choice, colId) => onCreateNode(projectId, choice, colId)}
+                onColumnDragStart={handleColumnDragStart}
+                onDragEnd={handleDragEnd}
+                onDropOnColumn={dropOnColumn}
+              />
+            ))}
+            <button className="kanban-add-col" onClick={() => commit(addColumn(board, 'New column', nextColumnColor(board)))}>+ Add column</button>
+          </div>
         </div>
-      </div>
+      )}
       {cardMenu && byId.has(cardMenu.nodeId) && (
         <ContextMenu x={cardMenu.x} y={cardMenu.y} zIndex={60} items={cardMenuItems(cardMenu.nodeId)} onClose={() => setCardMenu(null)} />
       )}

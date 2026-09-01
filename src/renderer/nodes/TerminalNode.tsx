@@ -1125,8 +1125,11 @@ export function TerminalNode({
   // an agent's input box off the bottom. So while the board is up we report "not viewing" (null),
   // exactly like a park, and the visible modal drives the shared grid. A node only ever lives in the
   // ACTIVE project's React Flow, so the active project's view is the one that matters.
+  const omniKanbanEnabled = useSettings((s) => s.settings.omniKanbanEnabled !== false)
   const boardOpen = useViewMode(
-    (s) => viewFor(s, useProjects.getState().activeProjectId ?? '') === 'kanban'
+    (s) =>
+      (omniKanbanEnabled && s.globalKanban) ||
+      viewFor(s, useProjects.getState().activeProjectId ?? '') === 'kanban'
   )
   const boardOpenRef = useRef(boardOpen)
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null)
