@@ -186,6 +186,7 @@ const Swimlane = memo(function Swimlane({
 
   const jumpToSelf = () => {
     document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    useViewMode.getState().setHighlightedSwimlaneId(projectId)
   }
   return (
     <div
@@ -257,7 +258,6 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   const jumpTo = useCallback((projectId: string) => {
     document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setHighlightId(projectId)
-    setTimeout(() => setHighlightId(null), 1500)
   }, [setHighlightId])
 
   // Expose scroll-to-swimlane for Cmd+1..9

@@ -279,6 +279,14 @@ body,
   font-weight: 600;
 }
 
+/* In the all-projects board the highlighted tab follows the selected swimlane, not necessarily
+   the project whose canvas is mounted underneath. Keep that selection visible in the tab strip. */
+.tab.tab--swimlane-highlight {
+  background: rgba(var(--tint-rgb), 0.16);
+  box-shadow: inset 0 -2px 0 currentColor;
+  font-weight: 600;
+}
+
 /* Project whose folder/ref is missing or unreachable — greyed and not switchable. */
 .tab.unavailable {
   opacity: 0.45;
@@ -8762,9 +8770,6 @@ button.group-node__setup:disabled {
   z-index: 1;
   box-shadow: 0 2px 12px rgba(0, 0, 0, calc(0.12 * var(--shadow-k)));
 }
-.kanban-swimlane:has(.kanban-col__newmenu) {
-  z-index: 10;
-}
 .kanban-swimlane:nth-child(even) {
   background: rgba(var(--tint-rgb), 0.035);
 }
@@ -9047,12 +9052,19 @@ button.group-node__setup:disabled {
   display: flex;
   flex-direction: column;
 }
-/* Flipped up when the column sits near the window's bottom edge (see KanbanColumn's layout effect). */
-.kanban-col__newmenu--up {
-  top: auto;
-  bottom: 100%;
-  margin-top: 0;
-  margin-bottom: 4px;
+/* Global swimlanes contain horizontally scrolling boards, so an in-column menu would be clipped
+   before z-index can lift it above the next lane. The React portal is positioned against the
+   viewport instead; the component supplies its measured coordinates after mounting. */
+.kanban-col__newmenu--portal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  margin: 0;
+  width: 0;
+  visibility: hidden;
+  z-index: 29;
 }
 .kanban-col__newmenu button {
   display: flex;

@@ -6320,6 +6320,7 @@ export function Canvas() {
     if (!targetId) return false
     e.preventDefault()
     if (isGlobalKanbanOpen()) {
+      useViewMode.getState().setHighlightedSwimlaneId(targetId)
       window.dispatchEvent(new CustomEvent('nodeterm:swimlane-jump', { detail: { projectId: targetId } }))
       return true
     }

@@ -255,11 +255,12 @@ export function TabBar({
         >
           {projects.map((p) => {
             const active = isGlobal ? (highlightedId ? p.id === highlightedId : p.id === activeId) : p.id === activeId
+            const swimlaneHighlight = isGlobal && p.id === highlightedId
             const unreadCount = p.nodes.filter((n) => unreadSet.has(n.id)).length
             return (
               <div
                 key={p.id}
-                className={`tab${active ? ' active' : ''}${p.unavailable ? ' unavailable' : ''}${dropId === p.id ? ' is-drop-before' : ''}`}
+                className={`tab${active ? ' active' : ''}${swimlaneHighlight ? ' tab--swimlane-highlight' : ''}${p.unavailable ? ' unavailable' : ''}${dropId === p.id ? ' is-drop-before' : ''}`}
                 style={active ? { color: p.color } : undefined}
                 draggable={editingId !== p.id}
                 onDragStart={(e) => {
@@ -293,6 +294,7 @@ export function TabBar({
                   // In global swimlane overview, clicking the top project tab jumps to its
                   // swimlane instead of switching the canvas project (analog zu Cmd+1..9).
                   if (isGlobal) {
+                    useViewMode.getState().setHighlightedSwimlaneId(p.id)
                     window.dispatchEvent(new CustomEvent('nodeterm:swimlane-jump', { detail: { projectId: p.id } }))
                     return
                   }
