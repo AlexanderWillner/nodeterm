@@ -184,9 +184,16 @@ const Swimlane = memo(function Swimlane({
     ]
   }
 
+  const jumpToSelf = () => {
+    document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   return (
-    <div id={`swimlane-${projectId}`} className={`kanban-swimlane${highlight ? ' kanban-swimlane--highlight' : ''}`}>
-      <div className="kanban-swimlane__header">
+    <div
+      id={`swimlane-${projectId}`}
+      className={`kanban-swimlane${highlight ? ' kanban-swimlane--highlight' : ''}`}
+      style={{ ['--swimlane-color' as string]: projectColor || 'rgba(128,128,128,0.3)' }}
+    >
+      <div className="kanban-swimlane__header" onClick={jumpToSelf} title="Zum Anfang dieser Swimlane springen">
         <span className="kanban-header__dot" style={{ background: projectColor || '#444' }} />
         <span className="kanban-header__name">{projectName}</span>
         <span className="kanban-swimlane__count">{sessions.length} sessions</span>
@@ -246,19 +253,18 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const jumpTo = useCallback((projectId: string) => {
+    document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setHighlightId(projectId)
+    setTimeout(() => setHighlightId(null), 1500)
+  }, [])
+
   // Expose scroll-to-swimlane for Cmd+1..9
   useEffect(() => {
-    const handler = (e: CustomEvent<{ projectId: string }>) => {
-      const el = document.getElementById(`swimlane-${e.detail.projectId}`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        setHighlightId(e.detail.projectId)
-        setTimeout(() => setHighlightId(null), 1500)
-      }
-    }
+    const handler = (e: CustomEvent<{ projectId: string }>) => jumpTo(e.detail.projectId)
     window.addEventListener('nodeterm:swimlane-jump' as never, handler as never)
     return () => window.removeEventListener('nodeterm:swimlane-jump' as never, handler as never)
-  }, [])
+  }, [jumpTo])
 
   const onChangeBoard = useCallback((projectId: string, next: ProjectKanban) => {
     const prev = useProjects.getState().getProject(projectId)?.kanban ?? defaultKanban()
@@ -358,6 +364,20 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
         >
           ✕
         </button>
+      </div>
+      <div className="global-kanban__nav">
+        {projects.map((p, idx) => (
+          <button
+            key={p.id}
+            className="global-kanban__pill"
+            style={{ borderColor: p.color, ['--pill-color' as string]: p.color }}
+            title={`Springe zu ${p.name} (Cmd+${idx+1})`}
+            onClick={() => jumpTo(p.id)}
+          >
+            <span className="kanban-header__dot" style={{ background: p.color || '#888' }} />
+            <span>{idx+1}. {p.name}</span>
+          </button>
+        ))}
       </div>
       <div className="global-kanban__scroll">
         {projects.map((p, idx) => {

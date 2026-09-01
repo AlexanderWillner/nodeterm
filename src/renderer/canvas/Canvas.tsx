@@ -2249,7 +2249,9 @@ export function Canvas() {
   useEffect(() => registerWorkspaceDirty(markDirty), [markDirty])
 
   const perProjectKanbanOpen = useViewMode((s) => !!activeProjectId && viewFor(s, activeProjectId) === 'kanban')
-  const globalKanbanOpen = useViewMode((s) => s.globalKanban)
+  const rawGlobalKanban = useViewMode((s) => s.globalKanban)
+  const omniEnabled = useSettings((s) => s.settings.omniKanbanEnabled !== false)
+  const globalKanbanOpen = rawGlobalKanban && omniEnabled
   const kanbanOpen = globalKanbanOpen || perProjectKanbanOpen
   const projectKanban = useProjects((s) => s.projects.find((p) => p.id === s.activeProjectId)?.kanban)
   // Fresh default per project — ids must not be shared across projects; NOT persisted
@@ -6493,10 +6495,14 @@ export function Canvas() {
       'app.settings': () => { setSettingsSection(undefined); setSettingsOpen(true); return true },
       'app.shortcutsPanel': () => { setShortcutsOpen((v) => !v); return true },
       'view.kanbanToggle': () => {
-        // New global swimlane kanban: toggle the overview that shows all projects as swimlanes.
-        // Per-project kanban remains via the tab's kanban button (TabBar toggle) and direct toggle().
-        // Keyboard shortcut now controls the global overview — Cmd+1..9 then jumps within it.
-        useViewMode.getState().toggleGlobalKanban()
+        const omniEnabled = useSettings.getState().settings.omniKanbanEnabled !== false
+        if (omniEnabled) {
+          useViewMode.getState().toggleGlobalKanban()
+        } else {
+          const id = useProjects.getState().activeProjectId
+          if (!id) return false
+          useViewMode.getState().toggle(id)
+        }
         return true
       },
       'view.focusMode': () => { toggleFocusMode(); return true },

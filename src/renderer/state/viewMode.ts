@@ -107,7 +107,16 @@ export function isKanbanOpen(projectId: string): boolean {
   return !!projectId && viewFor(useViewMode.getState(), projectId) === 'kanban'
 }
 
-/** True when the global swimlane overview is active (all projects as swimlanes). */
+/** True when the global swimlane overview is active (all projects as swimlanes).
+ *  Gated by Settings → Behavior → Omni Kanban: when disabled, the flag is ignored and
+ *  per-project tabs remain. `omniKanbanEnabled` defaults to true for new installs and
+ *  migrates to true for existing settings.json without the key. */
 export function isGlobalKanbanOpen(): boolean {
+  try {
+    // Lazy import to avoid circular init — viewMode is imported by settings consumers.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const settings = (require('./settings') as typeof import('./settings')).useSettings.getState().settings as { omniKanbanEnabled?: boolean }
+    if (settings.omniKanbanEnabled === false) return false
+  } catch { /* settings store not ready — treat as enabled */ }
   return useViewMode.getState().globalKanban
 }

@@ -16,6 +16,10 @@ const ROWS = {
     title: 'Default view',
     keywords: ['default', 'view', 'kanban', 'board', 'canvas', 'project']
   },
+  omniKanban: {
+    title: 'Omni Kanban (global swimlanes)',
+    keywords: ['omni', 'kanban', 'swimlane', 'global', 'overview', 'board', 'project']
+  },
   gridSize: { title: 'Grid size', keywords: ['grid', 'size', 'snap'] },
   nodeSize: {
     title: 'Default node size',
@@ -90,6 +94,19 @@ export function BehaviorSection({ isActive }: { isActive: boolean }): React.JSX.
               <option value="canvas">Canvas</option>
               <option value="kanban">Kanban board</option>
             </Select>
+          }
+        />
+      </SearchableRow>
+      <SearchableRow {...ROWS.omniKanban}>
+        <FieldRow
+          label="Omni Kanban (global swimlanes)"
+          description="When enabled, the kanban board shows all open projects as stacked swimlanes in one overview. Cmd+1..9 jumps to swimlanes, clicking a project pill jumps as well. Disable to keep per-project tabs."
+          control={
+            <Switch
+              checked={settings.omniKanbanEnabled ?? true}
+              onChange={(v) => update({ omniKanbanEnabled: v })}
+              ariaLabel="Omni Kanban"
+            />
           }
         />
       </SearchableRow>
