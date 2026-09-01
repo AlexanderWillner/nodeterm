@@ -65,6 +65,18 @@ export function viewFor(s: Pick<ViewModeState, 'viewByProject' | 'defaultView'>,
   return s.viewByProject[projectId] ?? s.defaultView
 }
 
+/**
+ * Feature flag: does the global swimlane overview exist at all?
+ * `settings.omniKanbanEnabled` is the *feature* toggle (Settings → Behavior → Omni Kanban,
+ * default ON, `true` when the key is absent for existing installs). `globalKanban` below is the
+ * *view* toggle (whether the overview is currently shown). The two have opposite defaults
+ * deliberately: the feature is on, the view is off until the user opens it. Use this helper
+ * instead of spelling `!== false` inline — five call sites were doing it.
+ */
+export function isOmniKanbanEnabled(settings: { omniKanbanEnabled?: boolean }): boolean {
+  return settings.omniKanbanEnabled !== false
+}
+
 function readGlobalKanban(): boolean {
   try {
     const raw = readLocal(GLOBAL_KANBAN_KEY)
@@ -112,16 +124,21 @@ export function isKanbanOpen(projectId: string): boolean {
   return !!projectId && viewFor(useViewMode.getState(), projectId) === 'kanban'
 }
 
-/** True when the global swimlane overview is active (all projects as swimlanes).
- *  Gated by Settings → Behavior → Omni Kanban: when disabled, the flag is ignored and
- *  per-project tabs remain. `omniKanbanEnabled` defaults to true for new installs and
- *  migrates to true for existing settings.json without the key. */
+/**
+ * True when the global swimlane overview is *currently shown* (all projects as swimlanes).
+ * Gated by the feature flag `omniKanbanEnabled` — when the feature is off, the view flag is
+ * ignored and per-project tabs remain. `globalKanban` itself is persisted in localStorage
+ * (`nodeterm.globalKanban`) so an explicit "open overview" survives a restart; this is
+ * intentional (like `viewByProject`), not transient — a lock that survives restart would read
+ * as "frozen", but a board that survives restart reads as "you left it open". If that proves
+ * surprising, make this transient; the call site is this one helper.
+ */
 export function isGlobalKanbanOpen(): boolean {
   try {
     // Lazy import to avoid circular init — viewMode is imported by settings consumers.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const settings = (require('./settings') as typeof import('./settings')).useSettings.getState().settings as { omniKanbanEnabled?: boolean }
-    if (settings.omniKanbanEnabled === false) return false
+    if (!isOmniKanbanEnabled(settings)) return false
   } catch { /* settings store not ready — treat as enabled */ }
   return useViewMode.getState().globalKanban
 }

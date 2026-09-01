@@ -423,7 +423,7 @@ import { canClearDirty, canCommitCanvas, canCreateOnCanvas } from '../state/pers
 import { isHidden } from '../lib/ui-visibility'
 import { boardLogEvents } from '../lib/boardLogDiff'
 import { useBoardLog } from '../state/boardLog'
-import { isGlobalKanbanOpen, isKanbanOpen, useViewMode, viewFor } from '../state/viewMode'
+import { isGlobalKanbanOpen, isKanbanOpen, isOmniKanbanEnabled, useViewMode, viewFor } from '../state/viewMode'
 import { GlobalKanbanView } from '../components/kanban/GlobalKanbanView'
 import { useFocusNode, FOCUS_SURFACE_ID } from '../state/focusNode'
 import { focusTargetId } from '../lib/focusTarget'
@@ -2254,7 +2254,7 @@ export function Canvas() {
 
   const perProjectKanbanOpen = useViewMode((s) => !!activeProjectId && viewFor(s, activeProjectId) === 'kanban')
   const rawGlobalKanban = useViewMode((s) => s.globalKanban)
-  const omniEnabled = useSettings((s) => s.settings.omniKanbanEnabled !== false)
+  const omniEnabled = useSettings((s) => isOmniKanbanEnabled(s.settings))
   const globalKanbanOpen = rawGlobalKanban && omniEnabled
   const kanbanOpen = globalKanbanOpen || perProjectKanbanOpen
   const projectKanban = useProjects((s) => s.projects.find((p) => p.id === s.activeProjectId)?.kanban)
@@ -2344,6 +2344,14 @@ export function Canvas() {
     commitActiveToStore()
     await writeDisk()
   }, [commitActiveToStore, writeDisk])
+
+  // Global kanban reads ALL lanes from serialized `p.nodes`, but the active project's
+  // live React Flow nodes may have uncommitted edits (title rename, new node). Commit
+  // before the board mounts so the active lane matches the canvas — the other lanes are
+  // already serialized and correct. This is the one-definition discipline from the review.
+  useEffect(() => {
+    if (globalKanbanOpen) commitActiveToStore()
+  }, [globalKanbanOpen, commitActiveToStore])
 
   // Mirror `dirty` into a ref so the external-change listener (mounted once) reads the
   // live value without re-subscribing on every edit.
@@ -6532,8 +6540,10 @@ export function Canvas() {
       'app.settings': () => { setSettingsSection(undefined); setSettingsOpen(true); return true },
       'app.shortcutsPanel': () => { setShortcutsOpen((v) => !v); return true },
       'view.kanbanToggle': () => {
-        const omniEnabled = useSettings.getState().settings.omniKanbanEnabled !== false
+        const omniEnabled = isOmniKanbanEnabled(useSettings.getState().settings)
         if (omniEnabled) {
+          // Ensure the active lane is not stale when the overview opens (live nodes → serialized p.nodes).
+          if (!isGlobalKanbanOpen()) commitActiveToStore()
           useViewMode.getState().toggleGlobalKanban()
         } else {
           const id = useProjects.getState().activeProjectId

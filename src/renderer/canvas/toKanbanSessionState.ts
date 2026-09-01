@@ -1,7 +1,20 @@
 import type { CanvasNodeState } from '@shared/types'
 import { NODE_COLORS } from '../state/workspace'
 import type { KanbanSession } from '../components/kanban/KanbanView'
+import type { ModalSpawn } from '../components/kanban/ModalTerminal'
 
+/** First-line sticky title, same rule as `toKanbanSession` — markdown heading marker is presentation. */
+function stickyTitle(text: string): string {
+  return text.trim().split('\n')[0].replace(/^#{1,6}\s+/, '').trim().slice(0, 80) || 'Note'
+}
+
+/**
+ * Persisted-state counterpart to `toKanbanSession` (which reads live React Flow `CanvasNode`s).
+ * This reads `CanvasNodeState` from the projects store — the source for every *non-active*
+ * project's lane in the global board. The two functions derive the SAME card shape and must
+ * agree on titles, colors and sticky handling; they share the title helper and spawn shape.
+ * Keep them in sync when adding fields — see `ModalSpawn`.
+ */
 export function toKanbanSessionState(n: CanvasNodeState): KanbanSession | null {
   if (n.kind === 'browser') {
     return {
@@ -11,39 +24,39 @@ export function toKanbanSessionState(n: CanvasNodeState): KanbanSession | null {
       kind: 'browser',
       url: n.url,
       partition: n.partition,
-      spawn: {}
+      spawn: {} as ModalSpawn
     }
   }
   if (n.kind === 'sticky') {
     const txt = n.text ?? ''
     return {
       id: n.id,
-      title: txt.trim().split('\n')[0].replace(/^#{1,6}\s+/, '').trim().slice(0, 80) || 'Note',
+      title: stickyTitle(txt),
       color: n.color ?? NODE_COLORS[2],
       kind: 'sticky',
       text: txt,
       textUpdatedAt: n.textUpdatedAt,
       textUpdatedBy: n.textUpdatedBy,
-      spawn: {}
+      spawn: {} as ModalSpawn
     }
   }
   if (n.kind !== 'terminal') return null
-  const raw = n as unknown as Record<string, unknown>
-  const initialCommand = (raw.initialCommand as string | undefined) ?? (raw.pendingLaunch as { command?: string } | undefined)?.command
+  const pendingCommand = n.pendingLaunch?.command
+  const spawn: ModalSpawn = {
+    shell: n.shell,
+    cwd: n.cwd,
+    agentId: n.agentId,
+    accountId: n.accountId,
+    ssh: n.ssh,
+    sshRemoteTmux: !!n.sshRemoteTmux,
+    ...(pendingCommand ? { initialCommand: pendingCommand } : {})
+  }
   return {
     id: n.id,
     title: n.title ?? '',
     color: n.color ?? NODE_COLORS[0],
     kind: 'terminal',
-    agentId: n.agentId as string | undefined,
-    spawn: {
-      shell: n.shell,
-      cwd: n.cwd,
-      agentId: n.agentId as string | undefined,
-      accountId: n.accountId as string | undefined,
-      ssh: n.ssh,
-      sshRemoteTmux: !!n.sshRemoteTmux,
-      ...(initialCommand ? { initialCommand } : {})
-    } as never
+    agentId: n.agentId,
+    spawn
   }
 }

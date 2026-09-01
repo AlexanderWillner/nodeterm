@@ -23,6 +23,25 @@ import { boardLogEvents } from '../../lib/boardLogDiff'
 import { markWorkspaceDirty } from '../../state/workspaceDirty'
 import type { KanbanCreateChoice, KanbanSession } from './KanbanView'
 
+/**
+ * Global (Omni) Kanban overview — one swimlane per open project.
+ *
+ * Three surfaces:
+ * - Desktop: full (pure renderer + workspace.save; same stack as per-project KanbanView).
+ * - Server Edition: works as-is (same renderer bundle via bridge, no Electron-specific code).
+ * - Mobile (nodeterm-ios, private repo): N/A — no canvas/kanban there (separate transport protocol).
+ *
+ * Closed projects (`p.closed`) are filtered out — an open board that showed closed lanes would
+ * surface parked sessions the user deliberately hid. Board writes (column/boardLog) go to the
+ * owning project's `.nodeterm/project.json` (`useProjects.setProjectKanban` → `markWorkspaceDirty` →
+ * debounced `workspace.save`), so a cross-project drag is a write in that project's repo — intentional
+ * (the board file travels with the repo, like per-project kanban already does). A card modal for a
+ * non-active SSH project co-attaches via `ModalTerminal`'s transport — if its ControlMaster is down,
+ * core refuses with `PtyCreateResult.unavailable` (`requireRemote` rule) and the modal shows no
+ * session rather than a local shell fallback; verified by the `create`/`join` contract in
+ * `src/core/pty-manager.ts` (`requireRemote` refuses, never falls through to local tmux).
+ */
+
 // One swimlane = one project's board
 interface SwimlaneProps {
   projectId: string

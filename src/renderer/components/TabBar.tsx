@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjects } from '../state/projects'
-import { useViewMode, viewFor } from '../state/viewMode'
+import { isOmniKanbanEnabled, useViewMode, viewFor } from '../state/viewMode'
 import { useAgentStatus } from '../state/agentStatus'
 import { useSettings } from '../state/settings'
 import { accountsForProject, sshAccountsHint, systemAccountDisplay } from '../state/workspace'
@@ -87,10 +87,11 @@ export function TabBar({
   // Closed projects are hidden here (reopen them from the start screen's "Recently closed").
   const projects = useMemo(() => allProjects.filter((p) => !p.closed), [allProjects])
   const activeId = useProjects((s) => s.activeProjectId)
-  const omniEnabled = useSettings((s) => s.settings.omniKanbanEnabled !== false)
+  const omniEnabled = useSettings((s) => isOmniKanbanEnabled(s.settings))
   const globalKanban = useViewMode((s) => s.globalKanban)
   const isGlobal = omniEnabled && globalKanban
-  const kanbanActive = useViewMode((s) => (omniEnabled && s.globalKanban) || (!!activeId && viewFor(s, activeId) === 'kanban'))
+  const perProjectKanban = useViewMode((s) => !!activeId && viewFor(s, activeId) === 'kanban')
+  const kanbanActive = isGlobal || perProjectKanban
   const highlightedId = useViewMode((s) => s.highlightedSwimlaneId)
   // Unread dots need only the unread id set — subscribing to the whole status map re-rendered
   // the TabBar on every working/waiting flip of any agent. Primitive signature → rare updates.
@@ -369,7 +370,7 @@ export function TabBar({
                     onClick={(e) => {
                       e.stopPropagation() // a tab click switches projects, this only flips the view
                       const vm = useViewMode.getState()
-                      const omni = (useSettings.getState().settings.omniKanbanEnabled !== false)
+                      const omni = isOmniKanbanEnabled(useSettings.getState().settings)
                       if (omni) {
                         if (vm.globalKanban || viewFor(vm, p.id) === 'kanban') {
                           if (vm.globalKanban) vm.toggleGlobalKanban()
