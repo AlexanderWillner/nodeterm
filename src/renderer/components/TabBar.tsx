@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useProjects } from '../state/projects'
-import { useViewMode, viewFor } from '../state/viewMode'
+import { isGlobalKanbanOpen, useViewMode, viewFor } from '../state/viewMode'
 import { useAgentStatus } from '../state/agentStatus'
 import { useSettings } from '../state/settings'
 import { accountsForProject, sshAccountsHint, systemAccountDisplay } from '../state/workspace'
@@ -287,8 +287,12 @@ export function TabBar({
                 }}
                 onClick={() => {
                   if (editingId) return
-                  // An unavailable tab distinguishes by its bound session source: a dropped RELAY
-                  // tab reconnects on click (Stage 4 Task 7), a missing local folder is inert.
+                  // In global swimlane overview, clicking the top project tab jumps to its
+                  // swimlane instead of switching the canvas project (analog zu Cmd+1..9).
+                  if (isGlobalKanbanOpen()) {
+                    window.dispatchEvent(new CustomEvent('nodeterm:swimlane-jump', { detail: { projectId: p.id } }))
+                    return
+                  }
                   const action = tabClickAction(!!p.unavailable, sessionForProject(p.id).source)
                   if (action === 'switch') onSwitch(p.id)
                   else if (action === 'reconnect') onReconnect(p.id)

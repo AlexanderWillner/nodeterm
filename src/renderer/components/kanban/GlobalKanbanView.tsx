@@ -365,20 +365,6 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
           ✕
         </button>
       </div>
-      <div className="global-kanban__nav">
-        {projects.map((p, idx) => (
-          <button
-            key={p.id}
-            className="global-kanban__pill"
-            style={{ borderColor: p.color, ['--pill-color' as string]: p.color }}
-            title={`Springe zu ${p.name} (Cmd+${idx+1})`}
-            onClick={() => jumpTo(p.id)}
-          >
-            <span className="kanban-header__dot" style={{ background: p.color || '#888' }} />
-            <span>{idx+1}. {p.name}</span>
-          </button>
-        ))}
-      </div>
       <div className="global-kanban__scroll">
         {projects.map((p, idx) => {
           const board = p.kanban ?? defaultKanban()
