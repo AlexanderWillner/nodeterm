@@ -41,15 +41,18 @@ export function toKanbanSessionState(n: CanvasNodeState): KanbanSession | null {
     }
   }
   if (n.kind !== 'terminal') return null
-  const pendingCommand = n.pendingLaunch?.command
+  // pendingLaunch is the --after DAG launch — it must fire only when dependencies report done,
+  // not when a card modal opens. Mapping it to initialCommand would fire it early. And
+  // initialCommand itself is transient (not in CanvasNodeState) and is delivered by the
+  // canvas TerminalNode via writeWhenShellReady after switching to the project (see create-node
+  // handler), so the modal has no legitimate case to deliver it.
   const spawn: ModalSpawn = {
     shell: n.shell,
     cwd: n.cwd,
     agentId: n.agentId,
     accountId: n.accountId,
     ssh: n.ssh,
-    sshRemoteTmux: !!n.sshRemoteTmux,
-    ...(pendingCommand ? { initialCommand: pendingCommand } : {})
+    sshRemoteTmux: !!n.sshRemoteTmux
   }
   return {
     id: n.id,

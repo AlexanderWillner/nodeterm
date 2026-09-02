@@ -2535,6 +2535,36 @@ export function Canvas() {
     if (globalKanbanOpen) commitActiveToStore()
   }, [globalKanbanOpen, commitActiveToStore])
 
+  // Single decision for "toggle the kanban board" — called from both the registry handler
+  // (view.kanbanToggle, under terminal-first) and the desktop menu IPC receiver
+  // (onToggleKanban, under app-first where the menu steals the accelerator). Must stay in one
+  // place: the IPC path bypasses the registry, so duplicating the omni/asDefault choice
+  // caused Cmd+Shift+B on desktop to ignore omniKanbanAsDefault and to toggle the per-project
+  // board underneath the global overlay.
+  const performKanbanToggle = useCallback(() => {
+    if (isGlobalKanbanOpen()) {
+      useViewMode.getState().toggleGlobalKanban()
+      return true
+    }
+    const settings = useSettings.getState().settings
+    if (isOmniKanbanEnabled(settings) && settings.omniKanbanAsDefault === true) {
+      commitActiveToStore()
+      useViewMode.getState().toggleGlobalKanban()
+      return true
+    }
+    const id = useProjects.getState().activeProjectId
+    if (!id) return false
+    useViewMode.getState().toggle(id)
+    return true
+  }, [commitActiveToStore])
+
+  const performGlobalKanbanToggle = useCallback(() => {
+    if (!isOmniKanbanEnabled(useSettings.getState().settings)) return false
+    if (!isGlobalKanbanOpen()) commitActiveToStore()
+    useViewMode.getState().toggleGlobalKanban()
+    return true
+  }, [commitActiveToStore])
+
   // Mirror `dirty` into a ref so the external-change listener (mounted once) reads the
   // live value without re-subscribing on every edit.
   const dirtyRef = useRef(false)
@@ -5088,10 +5118,9 @@ export function Canvas() {
       if (isTerminalTarget(document.activeElement as unknown as ContextElement | null)) {
         noteTerminalCapture('view.kanbanToggle')
       }
-      const id = useProjects.getState().activeProjectId
-      if (id) useViewMode.getState().toggle(id)
+      performKanbanToggle()
     })
-  }, [])
+  }, [performKanbanToggle])
   // Native app menu → open Settings (⌘,). A menu click does not fire before-input-event, so the
   // Cmd+, keydown handler alone would leave the menu item inert — main forwards it as IPC.
   useEffect(() => {
@@ -7071,32 +7100,8 @@ export function Canvas() {
       'app.commandPalette': () => { setPaletteOpen((v) => !v); return true },
       'app.settings': () => { setSettingsSection(undefined); setSettingsOpen(true); return true },
       'app.shortcutsPanel': () => { setShortcutsOpen((v) => !v); return true },
-      'view.kanbanToggle': () => {
-        // Global board is an overlay — any toggle while it's open closes it.
-        if (isGlobalKanbanOpen()) {
-          useViewMode.getState().toggleGlobalKanban()
-          return true
-        }
-        const settings = useSettings.getState().settings
-        const omniEnabled = isOmniKanbanEnabled(settings)
-        const asDefault = settings.omniKanbanAsDefault === true
-        if (omniEnabled && asDefault) {
-          // Opt-in: Cmd+Shift+B opens Omni when the user lives in the global view.
-          if (!isGlobalKanbanOpen()) commitActiveToStore()
-          useViewMode.getState().toggleGlobalKanban()
-        } else {
-          const id = useProjects.getState().activeProjectId
-          if (!id) return false
-          useViewMode.getState().toggle(id)
-        }
-        return true
-      },
-      'view.globalKanbanToggle': () => {
-        if (!isOmniKanbanEnabled(useSettings.getState().settings)) return false
-        if (!isGlobalKanbanOpen()) commitActiveToStore()
-        useViewMode.getState().toggleGlobalKanban()
-        return true
-      },
+      'view.kanbanToggle': () => performKanbanToggle(),
+      'view.globalKanbanToggle': () => performGlobalKanbanToggle(),
       'view.focusMode': () => { toggleFocusMode(); return true },
       'panel.explorer': () => { showExplorer('toggle'); return true },
       'panel.sourceControl': () => { setScOpen((v) => !v); return true },
@@ -8423,7 +8428,9 @@ export function Canvas() {
       const { projectId, choice, columnId } = e.detail
       if (projectId !== useProjects.getState().activeProjectId) {
         switchProject(projectId)
-        setTimeout(() => createNodeInColumn(choice, columnId), 120)
+        // Project switch is a synchronous store update but React Flow remount is async.
+        // Next tick is enough for the new canvas to be mounted; the previous 120 ms was a guess.
+        setTimeout(() => createNodeInColumn(choice, columnId), 50)
       } else {
         createNodeInColumn(choice, columnId)
       }
@@ -10802,6 +10809,114 @@ export function Canvas() {
     },
     [setNodes, markDirty]
   )
+
+  // Global Kanban delegates active-project mutations to the live canvas (React Flow is
+  // source of truth — direct store writes for the active project would be clobbered by the
+  // next commitActiveToStore). Non-active projects write to the store and then to disk.
+  // Delete uses ConfirmDialog and SSH-aware teardown (local transport.destroy vs remote
+  // sshProject.killSessions with everySocket), not native confirm.
+  useEffect(() => {
+    const onGlobalRename = (e: CustomEvent<{ projectId: string; nodeId: string; title: string }>) => {
+      renameSession(e.detail.projectId, e.detail.nodeId, e.detail.title)
+    }
+    const onGlobalEditSticky = (e: CustomEvent<{ projectId: string; nodeId: string; text: string }>) => {
+      const { projectId, nodeId, text } = e.detail
+      if (projectId === useProjects.getState().activeProjectId) {
+        setNodes((ns) =>
+          ns.map((n) =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, text, textUpdatedAt: undefined, textUpdatedBy: undefined } }
+              : n
+          )
+        )
+        markDirty()
+      } else {
+        useProjects.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, text } as never : n)) } : p
+          )
+        }))
+        void writeDisk()
+      }
+    }
+    const onGlobalBrowserNav = (
+      e: CustomEvent<{ projectId: string; nodeId: string; patch: { url?: string; title?: string } }>
+    ) => {
+      const { projectId, nodeId, patch } = e.detail
+      if (projectId === useProjects.getState().activeProjectId) {
+        setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n)))
+        markDirty()
+      } else {
+        useProjects.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, ...patch } as never : n)) } : p
+          )
+        }))
+        void writeDisk()
+      }
+    }
+    const onGlobalDelete = (e: CustomEvent<{ projectId: string; nodeId: string }>) => {
+      const { projectId, nodeId } = e.detail
+      if (projectId === useProjects.getState().activeProjectId) {
+        deleteNodeFromKanban(nodeId)
+        return
+      }
+      const proj = useProjects.getState().getProject(projectId)
+      const label = proj?.nodes.find((n) => n.id === nodeId)?.title || 'this session'
+      setConfirm({
+        message: `Delete ${label}? Its terminal session will end.`,
+        onConfirm: async () => {
+          useProjects.setState((s) => ({
+            projects: s.projects.map((p) =>
+              p.id === projectId ? { ...p, nodes: p.nodes.filter((n) => n.id !== nodeId) } : p
+            )
+          }))
+          const owner = useProjects.getState().projects.find((p) => p.id === projectId)
+          const isSsh = !!owner?.ssh
+          try {
+            if (isSsh) {
+              await (window as unknown as { nodeTerminal: { sshProject: { killSessions: (a: string, b: string[], c: unknown) => Promise<void> } } }).nodeTerminal.sshProject.killSessions(projectId, [nodeId], { everySocket: true } as never)
+            } else {
+              transport.destroy(nodeId)
+            }
+          } catch {}
+          useAgentStatus.getState().remove(nodeId)
+          useAgentNodes.getState().clearForParent(nodeId)
+          useAgentNodes.getState().clearLoop(nodeId)
+          useWebviewKeepAlive.getState().drop(nodeId)
+          clearAttachConsent(nodeId)
+          setConfirm(null)
+          void writeDisk()
+        }
+      })
+    }
+    const onGlobalSetIcon = (e: CustomEvent<{ projectId: string; nodeId: string; icon: import('@shared/node-icon').NodeIcon | undefined }>) => {
+      const { projectId, nodeId, icon } = e.detail
+      if (projectId === useProjects.getState().activeProjectId) {
+        setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, icon } } : n)))
+        markDirty()
+      } else {
+        useProjects.setState((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, nodes: p.nodes.map((n) => (n.id === nodeId ? { ...n, icon } as never : n)) } : p
+          )
+        }))
+        void writeDisk()
+      }
+    }
+    window.addEventListener('nodeterm:global-rename' as never, onGlobalRename as never)
+    window.addEventListener('nodeterm:global-edit-sticky' as never, onGlobalEditSticky as never)
+    window.addEventListener('nodeterm:global-browser-nav' as never, onGlobalBrowserNav as never)
+    window.addEventListener('nodeterm:global-delete' as never, onGlobalDelete as never)
+    window.addEventListener('nodeterm:global-set-icon' as never, onGlobalSetIcon as never)
+    return () => {
+      window.removeEventListener('nodeterm:global-rename' as never, onGlobalRename as never)
+      window.removeEventListener('nodeterm:global-edit-sticky' as never, onGlobalEditSticky as never)
+      window.removeEventListener('nodeterm:global-browser-nav' as never, onGlobalBrowserNav as never)
+      window.removeEventListener('nodeterm:global-delete' as never, onGlobalDelete as never)
+      window.removeEventListener('nodeterm:global-set-icon' as never, onGlobalSetIcon as never)
+    }
+  }, [renameSession, setNodes, markDirty, writeDisk, deleteNodeFromKanban])
 
   // Sidebar "Name with AI": generate a title from the session's captured terminal output
   // (same BYO-agent path as the terminal node's ✦), then apply it via renameSession.

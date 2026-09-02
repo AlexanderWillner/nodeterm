@@ -22,6 +22,7 @@ import { useBoardLog } from '../../state/boardLog'
 import { boardLogEvents } from '../../lib/boardLogDiff'
 import { markWorkspaceDirty } from '../../state/workspaceDirty'
 import type { KanbanCreateChoice, KanbanSession } from './KanbanView'
+import type { NodeIcon } from '@shared/node-icon'
 
 /**
  * Global (Omni) Kanban overview — one swimlane per open project.
@@ -56,12 +57,13 @@ interface SwimlaneProps {
   onRenameNode: (nodeId: string, title: string) => void
   onEditSticky: (projectId: string, nodeId: string, text: string) => void
   onBrowserNav: (projectId: string, nodeId: string, patch: { url?: string; title?: string }) => void
+  onSetIcon: (projectId: string, nodeId: string, icon: NodeIcon | undefined) => void
   onModalChange: (nodeId: string | null) => void
   highlight?: boolean
 }
 
 const Swimlane = memo(function Swimlane({
-  projectId, projectName, projectColor, board, sessions, onChangeBoard, onOpenNode, onCreateNode, onDeleteNode, onRenameNode, onEditSticky, onBrowserNav, onModalChange, highlight
+  projectId, projectName, projectColor, board, sessions, onChangeBoard, onOpenNode, onCreateNode, onDeleteNode, onRenameNode, onEditSticky, onBrowserNav, onSetIcon, onModalChange, highlight
 }: SwimlaneProps) {
   const dragRef = useRef<{ kind: 'column'; id: string } | { kind: 'card'; id: string } | null>(null)
   const [modalNodeId, setModalNodeId] = useState<string | null>(null)
@@ -277,6 +279,7 @@ const Swimlane = memo(function Swimlane({
           onRename={(t) => onRenameNode(modalNodeId, t)}
           onEditSticky={(t) => onEditSticky(projectId, modalNodeId, t)}
           onBrowserNav={(patch) => onBrowserNav(projectId, modalNodeId, patch)}
+          onSetIcon={(icon) => onSetIcon(projectId, modalNodeId, icon)}
         />
       )}
     </div>
@@ -290,6 +293,7 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   const highlightId = useViewMode(s => s.highlightedSwimlaneId)
   const setHighlightId = useViewMode(s => s.setHighlightedSwimlaneId)
   const containerRef = useRef<HTMLDivElement>(null)
+  const mod = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? 'Cmd' : 'Ctrl'
 
   const jumpTo = useCallback((projectId: string) => {
     document.getElementById(`swimlane-${projectId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -328,31 +332,27 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
   }, [])
 
   const onDeleteNode = useCallback((projectId: string, nodeId: string) => {
-    const proj = useProjects.getState().getProject(projectId)
-    const label = proj?.nodes.find(n => n.id === nodeId)?.title || 'this session'
-    if (!confirm(`Delete ${label}? Its terminal session will end.`)) return
-    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.filter(n => n.id !== nodeId) } : p) }))
-    markWorkspaceDirty()
-    // best-effort kill tmux session (works for local and remote via api)
-    try { (api as unknown as { pty: { destroy: (id: string) => void } }).pty.destroy(nodeId as never) } catch {}
-    try { (window as unknown as { nodeTerminal?: { pty: { destroy: (id: string) => void } } }).nodeTerminal?.pty.destroy(nodeId) } catch {}
-  }, [api])
+    // Delegate to Canvas — it shows ConfirmDialog, handles agent-status teardown, and routes
+    // SSH kills via lib/sessionKill (local pty.destroy only touches local sockets).
+    window.dispatchEvent(new CustomEvent('nodeterm:global-delete', { detail: { projectId, nodeId } }))
+  }, [])
 
   const onRenameNode = useCallback((nodeId: string, title: string) => {
-    // find owning project
     const proj = useProjects.getState().projects.find(p => p.nodes.some(n => n.id === nodeId))
     if (!proj) return
-    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === proj.id ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, title, titleAuto: false } : n) } : p) }))
+    window.dispatchEvent(new CustomEvent('nodeterm:global-rename', { detail: { projectId: proj.id, nodeId, title } }))
   }, [])
 
   const onEditSticky = useCallback((projectId: string, nodeId: string, text: string) => {
-    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, text } as never : n) } : p) }))
-    markWorkspaceDirty()
+    window.dispatchEvent(new CustomEvent('nodeterm:global-edit-sticky', { detail: { projectId, nodeId, text } }))
   }, [])
 
   const onBrowserNav = useCallback((projectId: string, nodeId: string, patch: { url?: string; title?: string }) => {
-    useProjects.setState(s => ({ projects: s.projects.map(p => p.id === projectId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, ...patch } as never : n) } : p) }))
-    markWorkspaceDirty()
+    window.dispatchEvent(new CustomEvent('nodeterm:global-browser-nav', { detail: { projectId, nodeId, patch } }))
+  }, [])
+
+  const onSetIcon = useCallback((projectId: string, nodeId: string, icon: NodeIcon | undefined) => {
+    window.dispatchEvent(new CustomEvent('nodeterm:global-set-icon', { detail: { projectId, nodeId, icon } }))
   }, [])
 
   const onOpenNode = useCallback((nodeId: string, _projectId: string) => {
@@ -375,10 +375,10 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
     <div className="kanban-overlay global-kanban" ref={containerRef}>
       <div className="kanban-header">
         <span className="kanban-header__name">All Projects</span>
-        <span className="kanban-swimlane__hint">{projects.length} projects — Cmd+1..{Math.min(9, projects.length)} to jump</span>
+        <span className="kanban-swimlane__hint">{projects.length} projects — {mod}+1..{Math.min(9, projects.length)} to jump</span>
         <button
           className="kanban-header__close"
-          title="Back to canvas (Cmd+Shift+B)"
+          title={`Back to canvas (${mod}+Shift+B)`}
           onClick={() => useViewMode.getState().toggleGlobalKanban()}
         >
           ✕
@@ -403,6 +403,7 @@ export const GlobalKanbanView = memo(function GlobalKanbanView() {
               onRenameNode={onRenameNode}
               onEditSticky={onEditSticky}
               onBrowserNav={onBrowserNav}
+              onSetIcon={onSetIcon}
               onModalChange={id => { modalRef.current = id }}
               highlight={highlightId === p.id}
             />

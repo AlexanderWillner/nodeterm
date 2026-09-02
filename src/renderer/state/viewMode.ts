@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { readLocal, writeLocal } from '../lib/localStore'
+import { useSettings } from './settings'
 
 // Which view each project shows (canvas or kanban) — PERSONAL, per machine: persisted in
 // localStorage, deliberately never in the git-shared .nodeterm/project.json (spec rule).
@@ -134,10 +135,10 @@ export function isKanbanOpen(projectId: string): boolean {
  */
 export function isGlobalKanbanOpen(): boolean {
   try {
-    // Lazy import to avoid circular init — viewMode is imported by settings consumers.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const settings = (require('./settings') as typeof import('./settings')).useSettings.getState().settings as { omniKanbanEnabled?: boolean }
-    if (!isOmniKanbanEnabled(settings)) return false
-  } catch { /* settings store not ready — treat as enabled */ }
+    if (!isOmniKanbanEnabled(useSettings.getState().settings)) return false
+  } catch {
+    // Fail closed — default OFF, so an unreadable settings store must not enable Omni.
+    return false
+  }
   return useViewMode.getState().globalKanban
 }

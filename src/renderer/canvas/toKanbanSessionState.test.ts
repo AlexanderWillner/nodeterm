@@ -31,11 +31,11 @@ describe('toKanbanSessionState', () => {
     expect(s.spawn.initialCommand).toBeUndefined()
   })
 
-  it('carries pendingLaunch.command as initialCommand', () => {
+  it('does not carry pendingLaunch.command as initialCommand (DAG launch only)', () => {
     const s = toKanbanSessionState(
       base({ kind: 'terminal', pendingLaunch: { after: [], command: 'claude --resume' } })
     )!
-    expect(s.spawn.initialCommand).toBe('claude --resume')
+    expect(s.spawn.initialCommand).toBeUndefined()
   })
 
   it('maps sticky notes with title derivation', () => {

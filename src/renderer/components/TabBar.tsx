@@ -381,9 +381,7 @@ export function TabBar({
                       if (omni && asDefault) {
                         vm.toggleGlobalKanban()
                       } else {
-                        // Per-project board for this tab (also closes an open per-project board)
-                        if (viewFor(vm, p.id) === 'kanban') vm.toggle(p.id)
-                        else vm.toggle(p.id)
+                        vm.toggle(p.id)
                       }
                     }}
                   >
