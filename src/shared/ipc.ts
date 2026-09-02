@@ -58,6 +58,8 @@ export const IPC = {
   codexAccountsRollbackSwitch: 'codex-accounts:rollback-switch',
   codexAccountsTransferThreadToSsh: 'codex-accounts:transfer-thread-to-ssh',
   claudeCliCaps: 'claude-cli:caps',
+  grokCliCaps: 'grok-cli:caps',
+  grokTakenSessionIds: 'grok-cli:taken-session-ids',
   /** Can a node on this machine get a managed Codex identity? See core/codex-identity-caps.ts. */
   codexIdentityCaps: 'codex-identity:caps',
   /** main/server → renderer: a Codex node's identity mode changed ('shared' | 'plain'). The
@@ -155,6 +157,19 @@ export const IPC = {
    *  no-ops for a non-hibernated or unmounted node — same contract as `wakeHibernatedNode`. Arg:
    *  `nodeId: string`. */
   agentWake: 'agent:wake',
+  /** main → renderer: ask the renderer to reload a terminal node's view in place NOW (bump its
+   *  `respawnNonce` — fresh PTY attach to the SAME tmux session, nothing running is interrupted).
+   *  Fired by the phone relay host's `node.refresh` verb (the session-list long-press menu's
+   *  "Refresh on desktop"). Same nudge contract as `agent:wake`: the renderer no-ops for an
+   *  unknown, non-terminal or unmounted (inactive project) node. Arg: `nodeId: string`. */
+  agentRefreshNode: 'agent:refresh-node',
+  /** main → renderer: rename a node on behalf of a phone (the relay host's `node.rename` verb).
+   *  Routed through the renderer's `renameSession` funnel — the same one the node header uses —
+   *  so `titleAuto` flips off and a rename-capable agent gets `/rename` pushed into its live
+   *  session; a raw `data.title` write (canvas:mutate) would do neither and be overwritten by the
+   *  next session-name poll. The title is sanitized host-side before this fires (control chars
+   *  stripped, length-clamped). Arg: `{ nodeId: string, title: string }`. */
+  agentRenameNode: 'agent:rename-node',
   /** main → renderer: the CURRENT set of node ids with a live relay viewer attached (a phone
    *  watching the session). Arg: `string[]` — the full set each change, so a dropped event cannot
    *  strand a stale entry. Feeds `isNodeWatched`: a session someone is watching from a phone must
@@ -245,6 +260,11 @@ export const IPC = {
   /** The scoped machine's RAM (available/total) — the cheap read behind the system-resource
    *  pill. Safe to poll locally; NOT polled for an SSH scope. */
   sessionMemoryHost: 'session-memory:host',
+  // Trigger nodes (issue #493): machine-local arm/disarm + the card's status/run-now.
+  triggersArm: 'triggers:arm',
+  triggersDisarm: 'triggers:disarm',
+  triggersStatus: 'triggers:status',
+  triggersRunNow: 'triggers:run-now',
   contextUpdate: 'context:update',
   contextEnsure: 'context:ensure',
   // Team presence (docs/team-presence.md). `presence:hello` is a REQUEST: its response tells the
